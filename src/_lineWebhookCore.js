@@ -1,13 +1,9 @@
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-function getRawBody(req) {
+export function getRawBody(req) {
   return new Promise((resolve, reject) => {
     let data = "";
     req.on("data", (chunk) => (data += chunk));
@@ -16,29 +12,27 @@ function getRawBody(req) {
   });
 }
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
-
-async function getRecipients() {
+async function getRecipients(storageKey) {
   const { data } = await supabase
     .from("app_data")
     .select("value")
-    .eq("key", "lb-line-recipients")
+    .eq("key", storageKey)
     .maybeSingle();
   return data ? data.value : [];
 }
 
-async function saveRecipients(v) {
+async function saveRecipients(storageKey, v) {
   await supabase
     .from("app_data")
-    .upsert({ key: "lb-line-recipients", value: v, updated_at: new Date().toISOString() });
+    .upsert({ key: storageKey, value: v, updated_at: new Date().toISOString() });
 }
 
-async function lineReply(replyToken, text) {
+async function lineReply(accessToken, replyToken, text) {
   await fetch("https://api.line.me/v2/bot/message/reply", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}`,
+      Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify({
       replyToken,
@@ -47,10 +41,10 @@ async function lineReply(replyToken, text) {
   });
 }
 
-async function getProfile(userId) {
+async function getProfile(accessToken, userId) {
   try {
     const r = await fetch(`https://api.line.me/v2/bot/profile/${userId}`, {
-      headers: { Authorization: `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}` },
+      headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!r.ok) return null;
     return await r.json();
@@ -59,7 +53,17 @@ async function getProfile(userId) {
   }
 }
 
-export default async function handler(req, res) {
+/**
+ * Handles a LINE webhook request for one specific official account.
+ * @param {object} opts
+ * @param {import('http').IncomingMessage} opts.req
+ * @param {import('http').ServerResponse} opts.res
+ * @param {string} opts.channelSecret
+ * @param {string} opts.accessToken
+ * @param {string} opts.storageKey  e.g. "lb-line-recipients-general"
+ * @param {string} opts.accountLabel  e.g. "LINO BROW" for reply text
+ */
+export async function handleLineWebhook({ req, res, channelSecret, accessToken, storageKey, accountLabel }) {
   if (req.method !== "POST") {
     res.status(200).send("OK");
     return;
@@ -67,10 +71,7 @@ export default async function handler(req, res) {
 
   const rawBody = await getRawBody(req);
   const signature = req.headers["x-line-signature"];
-  const expected = crypto
-    .createHmac("sha256", process.env.LINE_CHANNEL_SECRET || "")
-    .update(rawBody)
-    .digest("base64");
+  const expected = crypto.createHmac("sha256", channelSecret || "").update(rawBody).digest("base64");
 
   if (!signature || signature !== expected) {
     res.status(401).send("invalid signature");
@@ -91,28 +92,26 @@ export default async function handler(req, res) {
     const userId = event.source?.userId;
     if (!userId) continue;
 
-    const recipients = await getRecipients();
+    const recipients = await getRecipients(storageKey);
     const already = recipients.find((r) => r.userId === userId);
 
     if (already) {
       if (event.replyToken) {
-        await lineReply(event.replyToken, "すでに予約通知の登録が完了しています。");
+        await lineReply(accessToken, event.replyToken, "すでに予約通知の登録が完了しています。");
       }
       continue;
     }
 
-    const profile = await getProfile(userId);
+    const profile = await getProfile(accessToken, userId);
     const name = profile?.displayName || "スタッフ";
-    const updated = [
-      ...recipients,
-      { userId, name, registeredAt: new Date().toISOString() },
-    ];
-    await saveRecipients(updated);
+    const updated = [...recipients, { userId, name, registeredAt: new Date().toISOString() }];
+    await saveRecipients(storageKey, updated);
 
     if (event.replyToken) {
       await lineReply(
+        accessToken,
         event.replyToken,
-        `予約通知の登録が完了しました（${name}さん）。新しいご予約が入ると、こちらに自動でお知らせします。`
+        `【${accountLabel}】予約通知の登録が完了しました（${name}さん）。新しいご予約が入ると、こちらに自動でお知らせします。`
       );
     }
   }

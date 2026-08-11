@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { storageGet, storageSet } from "./supabaseClient.js";
+import { initLiff, getLiffProfile, liffLogin, getSourceAccount } from "./liff.js";
 
 
 /* ============================================================
@@ -338,6 +339,18 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [confirmed, setConfirmed] = useState(null);
+  const [lineProfile, setLineProfile] = useState(null);
+  const [liffChecked, setLiffChecked] = useState(false);
+  const sourceAccount = useMemo(() => getSourceAccount(), []);
+
+  useEffect(() => {
+    (async () => {
+      await initLiff(sourceAccount);
+      const profile = await getLiffProfile();
+      setLineProfile(profile);
+      setLiffChecked(true);
+    })();
+  }, [sourceAccount]);
 
   const matchedCompany = useMemo(() => {
     if (type !== "corporate" || !customerInfo.companyCode) return null;
@@ -399,6 +412,8 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
       contactName: type === "corporate" ? customerInfo.contact : "",
       phone: customerInfo.phone,
       firstTime: customerInfo.firstTime,
+      lineUserId: lineProfile?.userId || null,
+      sourceAccount,
       menuId,
       menuName: selectedMenu.name,
       optionIds,
@@ -460,12 +475,13 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
 
       {step === 1 && (
         <StepBlock title="ご予約区分をお選びください">
+          <OptionCard selected={type === "individual"} onClick={() => setType("individual")}>
+            <div style={{ fontWeight: "bold" }}>一般のお客様</div>
+            <div style={{ fontSize: 12, color: "#777", marginTop: 4 }}>通常のご予約はこちら（会社の福利厚生を利用無し）</div>
+          </OptionCard>
           <OptionCard selected={type === "corporate"} onClick={() => setType("corporate")}>
             <div style={{ fontWeight: "bold" }}>法人のお客様</div>
-            <div style={{ fontSize: 12, color: "#777", marginTop: 4 }}>yoin° Beauty提携プログラムをご利用の方</div>
-          </OptionCard>
-          <OptionCard selected={type === "individual"} onClick={() => setType("individual")}>
-            <div style={{ fontWeight: "bold" }}>個人のお客様</div>
+            <div style={{ fontSize: 12, color: "#777", marginTop: 4 }}>yoin° Beauty提携企業にお勤めの方はこちら</div>
           </OptionCard>
           <NavButtons onNext={() => type && setStep(2)} nextDisabled={!type} />
         </StepBlock>
@@ -523,6 +539,21 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
               <SmallToggle active={customerInfo.firstTime === false} onClick={() => setCustomerInfo({ ...customerInfo, firstTime: false })}>2回目以降</SmallToggle>
             </div>
           </Field>
+
+          {liffChecked && (
+            lineProfile ? (
+              <div style={{ fontSize: 12.5, color: COLORS.bronzeDark, background: "#FBF6EF", border: `1px solid ${COLORS.bronze}`, borderRadius: 8, padding: 10, marginBottom: 14 }}>
+                LINE連携済み（{lineProfile.displayName}さん）。予約確定時にLINEでもお知らせします。
+              </div>
+            ) : (
+              <div style={{ marginBottom: 14 }}>
+                <button style={secondaryBtn} onClick={liffLogin} type="button">
+                  LINEと連携する（予約確定をLINEでお知らせ・任意）
+                </button>
+              </div>
+            )
+          )}
+
           <NavButtons
             onBack={() => setStep(1)}
             onNext={() => setStep(3)}
@@ -661,7 +692,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
       {step === 7 && (
         <StepBlock title="最終確認">
           <div style={card}>
-            <Row label="区分" value={type === "corporate" ? "法人" : "個人"} />
+            <Row label="区分" value={type === "corporate" ? "法人" : "一般"} />
             <Row label={type === "corporate" ? "企業名" : "お名前"} value={type === "corporate" ? `${matchedCompany?.name} (${matchedCompany?.code})` : customerInfo.name} />
             {type === "corporate" && <Row label="ご担当者" value={customerInfo.contact} />}
             <Row label="メニュー" value={selectedMenu.name} />
@@ -846,12 +877,21 @@ function AdminPanel({ settings, setSettings, menus, setMenus, companies, setComp
 
 /* ---------- LINE notify tab ---------- */
 function LineNotifyTab() {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <LineAccountRecipients storageKey="lb-line-recipients-general" title="LINO BROW（一般のお客様用）" />
+      <LineAccountRecipients storageKey="lb-line-recipients-corp" title="yoin° Beauty（法人のお客様用）" />
+    </div>
+  );
+}
+
+function LineAccountRecipients({ storageKey, title }) {
   const [recipients, setRecipients] = useState(null);
 
   const load = useCallback(async () => {
-    const r = await storageGet("lb-line-recipients");
+    const r = await storageGet(storageKey);
     setRecipients(r || []);
-  }, []);
+  }, [storageKey]);
 
   useEffect(() => {
     load();
@@ -860,14 +900,15 @@ function LineNotifyTab() {
   async function removeRecipient(userId) {
     const updated = (recipients || []).filter((r) => r.userId !== userId);
     setRecipients(updated);
-    await storageSet("lb-line-recipients", updated);
+    await storageSet(storageKey, updated);
   }
 
   return (
     <div>
+      <div style={{ fontFamily: "Georgia, serif", fontSize: 16, marginBottom: 10 }}>{title}</div>
       <div style={{ ...card, marginBottom: 16, fontSize: 13, lineHeight: 1.7 }}>
         <div style={{ fontWeight: "bold", marginBottom: 6 }}>登録方法</div>
-        通知を受け取りたいスタッフの方は、公式LINEアカウントに何かひと言メッセージを送ってください（内容は何でもかまいません）。自動で登録され、以降このアカウントに新しい予約が入るたびに通知が届きます。
+        通知を受け取りたいスタッフの方は、この公式LINEアカウントに何かひと言メッセージを送ってください（内容は何でもかまいません）。自動で登録され、以降このアカウント宛の予約が入るたびに通知が届きます。
       </div>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -1016,7 +1057,7 @@ function BookingsTab({ bookings, setBookings, refreshBookings }) {
   function exportCSV() {
     const header = ["予約番号", "区分", "企業コード", "名前/企業名", "担当者", "電話", "メニュー", "オプション", "料金", "日付", "時間", "ステータス", "作成日時"];
     const rows = sorted.map((b) => [
-      b.code, b.type === "corporate" ? "法人" : "個人", b.companyCode || "", b.companyOrName, b.contactName, b.phone,
+      b.code, b.type === "corporate" ? "法人" : "一般", b.companyCode || "", b.companyOrName, b.contactName, b.phone,
       b.menuName, (b.optionNames || []).join(" / "), b.price, b.date, b.time,
       b.status === "confirmed" ? "予約中" : b.status === "done" ? "来店済み" : "キャンセル",
       b.createdAt,
@@ -1035,7 +1076,7 @@ function BookingsTab({ bookings, setBookings, refreshBookings }) {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
         <div style={{ display: "flex", gap: 6 }}>
-          {[["all", "すべて"], ["corporate", "法人"], ["individual", "個人"]].map(([k, l]) => (
+          {[["all", "すべて"], ["corporate", "法人"], ["individual", "一般"]].map(([k, l]) => (
             <SmallToggle key={k} active={filter === k} onClick={() => setFilter(k)}>{l}</SmallToggle>
           ))}
         </div>
@@ -1053,7 +1094,7 @@ function BookingsTab({ bookings, setBookings, refreshBookings }) {
                 <div style={{ fontWeight: "bold", marginTop: 2 }}>
                   {b.companyOrName}{b.companyCode ? `（${b.companyCode}）` : ""} {b.type === "corporate" && b.contactName ? `／${b.contactName}` : ""}
                   <span style={{ fontWeight: "normal", color: "#999", marginLeft: 6, fontSize: 12 }}>
-                    {b.type === "corporate" ? "法人" : "個人"}
+                    {b.type === "corporate" ? "法人" : "一般"}
                   </span>
                 </div>
                 <div style={{ fontSize: 13, marginTop: 2 }}>{b.menuName}{b.optionNames?.length ? " / " + b.optionNames.join("、") : ""}</div>
@@ -1100,7 +1141,7 @@ function DashboardTab({ bookings }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px,1fr))", gap: 10, marginBottom: 20 }}>
         <StatCard label="来店実績（合計）" value={active.length} />
         <StatCard label="法人 来店数" value={corporate.length} />
-        <StatCard label="個人 来店数" value={individual.length} />
+        <StatCard label="一般 来店数" value={individual.length} />
         <StatCard label="累計売上目安" value={`¥${totalRevenue.toLocaleString()}`} />
       </div>
 
@@ -1181,9 +1222,9 @@ function MenusTab({ menus, setMenus }) {
             </Field>
             <Field label="表示対象">
               <select style={inputStyle} value={m.audience} onChange={(e) => updateMenu(m.id, { audience: e.target.value })}>
-                <option value="both">法人・個人 両方</option>
+                <option value="both">法人・一般 両方</option>
                 <option value="corporate">法人のみ</option>
-                <option value="individual">個人のみ</option>
+                <option value="individual">一般のみ</option>
               </select>
             </Field>
 
@@ -1343,7 +1384,7 @@ function SettingsTab({ settings, setSettings }) {
         <Field label="キャンセルポリシー（法人向け）">
           <textarea style={{ ...inputStyle, minHeight: 90 }} value={local.cancelPolicyCorporate} onChange={(e) => setLocal({ ...local, cancelPolicyCorporate: e.target.value })} />
         </Field>
-        <Field label="キャンセルポリシー（個人向け）">
+        <Field label="キャンセルポリシー（一般向け）">
           <textarea style={{ ...inputStyle, minHeight: 90 }} value={local.cancelPolicyIndividual} onChange={(e) => setLocal({ ...local, cancelPolicyIndividual: e.target.value })} />
         </Field>
       </div>
