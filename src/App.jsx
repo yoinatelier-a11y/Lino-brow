@@ -431,7 +431,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
           <Row label="予約番号" value={confirmed.code} />
           <Row label="日時" value={`${confirmed.date} ${confirmed.time}〜`} />
           <Row label="メニュー" value={confirmed.menuName + (confirmed.optionNames.length ? " / " + confirmed.optionNames.join("、") : "")} />
-          <Row label="料金目安" value={`¥${confirmed.price.toLocaleString()}`} />
+          {confirmed.type !== "corporate" && <Row label="料金目安" value={`¥${confirmed.price.toLocaleString()}`} />}
           <Row label={confirmed.type === "corporate" ? "企業名" : "お名前"} value={confirmed.companyOrName + (confirmed.companyCode ? ` (${confirmed.companyCode})` : "")} />
         </div>
         <div style={{ ...card, marginTop: 12, fontSize: 13, lineHeight: 1.7 }}>
@@ -534,7 +534,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
             <OptionCard key={m.id} selected={menuId === m.id} onClick={() => { setMenuId(m.id); setOptionIds([]); }}>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <div style={{ fontWeight: "bold" }}>{m.name}</div>
-                <div style={{ color: COLORS.bronzeDark }}>¥{m.price.toLocaleString()}</div>
+                {type !== "corporate" && <div style={{ color: COLORS.bronzeDark }}>¥{m.price.toLocaleString()}</div>}
               </div>
               <div style={{ fontSize: 12, color: "#777", marginTop: 4 }}>{m.description}</div>
               <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>所要時間: {m.duration}分</div>
@@ -553,7 +553,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
                 <OptionCard key={o.id} selected={active} onClick={() => setOptionIds(active ? optionIds.filter((id) => id !== o.id) : [...optionIds, o.id])}>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <div>{o.name}</div>
-                    <div style={{ color: COLORS.bronzeDark }}>+¥{o.price.toLocaleString()}</div>
+                    {type !== "corporate" && <div style={{ color: COLORS.bronzeDark }}>+¥{o.price.toLocaleString()}</div>}
                   </div>
                 </OptionCard>
               );
@@ -660,7 +660,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
             <Row label="メニュー" value={selectedMenu.name} />
             {selectedOptions.length > 0 && <Row label="オプション" value={selectedOptions.map((o) => o.name).join("、")} />}
             <Row label="日時" value={`${dateStr} ${time}〜`} />
-            <Row label="お支払い目安" value={`¥${totalPrice.toLocaleString()}`} />
+            {type !== "corporate" && <Row label="お支払い目安" value={`¥${totalPrice.toLocaleString()}`} />}
           </div>
           <div style={{ ...card, marginTop: 12, fontSize: 12.5, lineHeight: 1.7, maxHeight: 160, overflowY: "auto" }}>
             <div style={{ fontWeight: "bold", marginBottom: 6 }}>キャンセルポリシー</div>
