@@ -540,6 +540,9 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
             </div>
           </Field>
 
+          {!liffChecked && (
+            <div style={{ fontSize: 12.5, color: "#999", marginBottom: 14 }}>LINE連携を確認中…</div>
+          )}
           {liffChecked && (
             lineProfile ? (
               <div style={{ fontSize: 12.5, color: COLORS.bronzeDark, background: "#FBF6EF", border: `1px solid ${COLORS.bronze}`, borderRadius: 8, padding: 10, marginBottom: 14 }}>
@@ -547,8 +550,11 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
               </div>
             ) : (
               <div style={{ marginBottom: 14 }}>
-                <button style={secondaryBtn} onClick={liffLogin} type="button">
-                  LINEと連携する（予約確定をLINEでお知らせ・任意）
+                <div style={{ fontSize: 12.5, color: "#B54747", marginBottom: 8 }}>
+                  ご予約にはLINE連携が必要です。下のボタンから連携してください。
+                </div>
+                <button style={primaryBtn} onClick={liffLogin} type="button">
+                  LINEと連携する
                 </button>
               </div>
             )
@@ -558,9 +564,10 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
             onBack={() => setStep(1)}
             onNext={() => setStep(3)}
             nextDisabled={
-              type === "corporate"
+              !lineProfile ||
+              (type === "corporate"
                 ? !matchedCompany || !customerInfo.companyConfirmed || !customerInfo.contact || !customerInfo.phone || customerInfo.firstTime === null
-                : !customerInfo.name || !customerInfo.phone || customerInfo.firstTime === null
+                : !customerInfo.name || !customerInfo.phone || customerInfo.firstTime === null)
             }
           />
         </StepBlock>
