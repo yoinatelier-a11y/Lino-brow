@@ -418,6 +418,13 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
     setConfirmed(newBooking);
     setSubmitting(false);
     setStep(8);
+
+    // fire-and-forget LINE notification; booking already succeeded either way
+    fetch("/api/notify-booking", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newBooking),
+    }).catch(() => {});
   }
 
   if (confirmed && step === 8) {
@@ -806,6 +813,7 @@ function AdminPanel({ settings, setSettings, menus, setMenus, companies, setComp
           ["dashboard", "ダッシュボード"],
           ["menus", "メニュー管理"],
           ["companies", "企業マスタ"],
+          ["line", "LINE通知"],
           ["settings", "設定"],
         ].map(([k, label]) => (
           <button
@@ -830,7 +838,61 @@ function AdminPanel({ settings, setSettings, menus, setMenus, companies, setComp
       {tab === "dashboard" && <DashboardTab bookings={bookings} />}
       {tab === "menus" && <MenusTab menus={menus} setMenus={setMenus} />}
       {tab === "companies" && <CompaniesTab companies={companies} setCompanies={setCompanies} bookings={bookings} quotaAdjustments={quotaAdjustments} setQuotaAdjustments={setQuotaAdjustments} />}
+      {tab === "line" && <LineNotifyTab />}
       {tab === "settings" && <SettingsTab settings={settings} setSettings={setSettings} />}
+    </div>
+  );
+}
+
+/* ---------- LINE notify tab ---------- */
+function LineNotifyTab() {
+  const [recipients, setRecipients] = useState(null);
+
+  const load = useCallback(async () => {
+    const r = await storageGet("lb-line-recipients");
+    setRecipients(r || []);
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function removeRecipient(userId) {
+    const updated = (recipients || []).filter((r) => r.userId !== userId);
+    setRecipients(updated);
+    await storageSet("lb-line-recipients", updated);
+  }
+
+  return (
+    <div>
+      <div style={{ ...card, marginBottom: 16, fontSize: 13, lineHeight: 1.7 }}>
+        <div style={{ fontWeight: "bold", marginBottom: 6 }}>登録方法</div>
+        通知を受け取りたいスタッフの方は、公式LINEアカウントに何かひと言メッセージを送ってください（内容は何でもかまいません）。自動で登録され、以降このアカウントに新しい予約が入るたびに通知が届きます。
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div style={{ fontSize: 13, fontWeight: "bold" }}>登録済みスタッフ（{recipients ? recipients.length : 0}名）</div>
+        <button style={secondaryBtn} onClick={load}>更新</button>
+      </div>
+
+      {recipients === null && <div style={{ fontSize: 13, color: "#999" }}>読み込み中…</div>}
+      {recipients && recipients.length === 0 && (
+        <div style={{ fontSize: 13, color: "#999" }}>まだ誰も登録されていません。</div>
+      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {recipients &&
+          recipients.map((r) => (
+            <div key={r.userId} style={{ ...card, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontWeight: "bold" }}>{r.name}</div>
+                <div style={{ fontSize: 11, color: "#999" }}>登録日: {r.registeredAt ? r.registeredAt.slice(0, 10) : ""}</div>
+              </div>
+              <button style={{ ...secondaryBtn, color: "#B54747", borderColor: "#E8C9C9" }} onClick={() => removeRecipient(r.userId)}>
+                解除
+              </button>
+            </div>
+          ))}
+      </div>
     </div>
   );
 }
