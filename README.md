@@ -31,41 +31,44 @@ using (true)
 with check (true);
 ```
 
-## LINE通知の設定（2アカウント運用）
+## LINE通知の設定（3アカウント運用）
 
-LINO BROW（一般のお客様向け）と yoin° Beauty（法人のお客様向け）、2つの公式LINEアカウントを使い分けます。
+- **LINO BROW**（一般のお客様用）: 予約確認をお客様本人に送るだけ（webhook不要）
+- **yoin° Beauty**（法人のお客様用）: 予約確認をお客様本人に送るだけ（webhook不要）
+- **lino brow 予約通知**（スタッフ通知専用）: 法人・一般どちらの予約が入っても、登録済み全スタッフへ通知（webhookが必要）
 
 ### Vercelの環境変数
 
 | 変数名 | 値 |
 |---|---|
 | `LINE_GENERAL_CHANNEL_ACCESS_TOKEN` | LINO BROWの「チャネルアクセストークン（長期）」 |
-| `LINE_GENERAL_CHANNEL_SECRET` | LINO BROWの「Channel secret」 |
 | `LINE_CORP_CHANNEL_ACCESS_TOKEN` | yoin° Beautyの「チャネルアクセストークン（長期）」 |
-| `LINE_CORP_CHANNEL_SECRET` | yoin° Beautyの「Channel secret」 |
+| `LINE_STAFF_CHANNEL_ACCESS_TOKEN` | lino brow 予約通知の「チャネルアクセストークン（長期）」 |
+| `LINE_STAFF_CHANNEL_SECRET` | lino brow 予約通知の「Channel secret」 |
 | `VITE_LIFF_ID_GENERAL` | LINO BROW側で作成したLIFF ID |
 | `VITE_LIFF_ID_CORP` | yoin° Beauty側で作成したLIFF ID |
 | `SUPABASE_URL` | `https://xxxxx.supabase.co` |
 | `SUPABASE_KEY` | Supabaseの Publishable key |
+| `CRON_SECRET` | 前日リマインド用（任意の文字列、推奨） |
 
 ### LINE Developersでのwebhook設定
 
-- **LINO BROW**チャネルの「Messaging API設定」→ Webhook URL:
-  `https://（VercelのURL）/api/line-webhook-general`
-- **yoin° Beauty**チャネルの「Messaging API設定」→ Webhook URL:
-  `https://（VercelのURL）/api/line-webhook-corp`
-- どちらも「Webhookの利用」をオンにする
+**lino brow 予約通知**チャネルの「Messaging API設定」のみ:
+- Webhook URL: `https://（VercelのURL）/api/line-webhook-staff`
+- 「Webhookの利用」をオンにする
 
-### LIFFエンドポイントURL（各アカウントのLIFFタブで設定）
+LINO BROW・yoin° Beautyの2アカウントは、webhookの設定は不要です（お客様への一方向のお知らせのみのため）。
 
-- LINO BROW側のLIFFアプリ: エンドポイントURLに `?account=general` を付ける（省略しても一般扱いになります）
-- yoin° Beauty側のLIFFアプリ: エンドポイントURLに `?account=corp` を付ける
+### LIFFエンドポイントURL（LINO BROW・yoin° Beautyそれぞれで設定）
+
+- LINO BROW側のLIFFアプリ: エンドポイントURLに `?account=general`
+- yoin° Beauty側のLIFFアプリ: エンドポイントURLに `?account=corp`
 
 ### 仕組み
 
-- スタッフへの通知: 予約時に選ばれた「法人/一般」の区分で、対応するアカウントの登録スタッフへ自動送信
-- お客様への確認通知: お客様がどちらのアカウント経由でLIFFを開いたか（`?account=`）に応じて、対応するアカウントから本人へ自動送信（LINE連携が必須になったため、予約したお客様には必ず送信されます）
-- スタッフの登録は、各公式アカウントに何かメッセージを送るだけで自動登録（管理画面の「LINE通知」タブでアカウントごとに確認・解除可能）
+- スタッフへの通知: 法人・一般どちらの予約でも、「lino brow 予約通知」アカウントに登録されている全スタッフへ自動送信
+- お客様への確認通知: お客様がどちらのアカウント経由でLIFFを開いたか（`?account=`）に応じて、対応するアカウントから本人へ自動送信（LINE連携が必須のため、予約したお客様には必ず送信されます）
+- スタッフの登録は、「lino brow 予約通知」アカウントに何かメッセージを送るだけで自動登録（管理画面の「LINE通知」タブで確認・解除可能）
 
 ## LINE連携について
 

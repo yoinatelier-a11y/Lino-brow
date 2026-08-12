@@ -8,17 +8,20 @@ export const config = {
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-const ACCOUNTS = {
+const CUSTOMER_ACCOUNTS = {
   general: {
     accessToken: process.env.LINE_GENERAL_CHANNEL_ACCESS_TOKEN,
-    recipientsKey: "lb-line-recipients-general",
     label: "LINO BROW",
   },
   corp: {
     accessToken: process.env.LINE_CORP_CHANNEL_ACCESS_TOKEN,
-    recipientsKey: "lb-line-recipients-corp",
     label: "yoin° Beauty",
   },
+};
+
+const STAFF_ACCOUNT = {
+  accessToken: process.env.LINE_STAFF_CHANNEL_ACCESS_TOKEN,
+  recipientsKey: "lb-line-recipients-staff",
 };
 
 async function getRecipients(storageKey) {
@@ -77,12 +80,11 @@ export default async function handler(req, res) {
   try {
     const booking = req.body || {};
 
-    // staff notification: routed by booking type (法人 -> yoin° Beauty staff, 一般 -> LINO BROW staff)
-    const staffAccountKey = booking.type === "corporate" ? "corp" : "general";
-    const staffAccount = ACCOUNTS[staffAccountKey];
-    const staffRecipients = await getRecipients(staffAccount.recipientsKey);
+    // staff notification: always via the dedicated staff-notification account,
+    // regardless of 法人/一般
+    const staffRecipients = await getRecipients(STAFF_ACCOUNT.recipientsKey);
     const staffResult = await multicast(
-      staffAccount.accessToken,
+      STAFF_ACCOUNT.accessToken,
       staffRecipients.map((r) => r.userId),
       bookingText(booking)
     );
@@ -91,7 +93,7 @@ export default async function handler(req, res) {
     let customerResult = { sent: false, reason: "no lineUserId" };
     if (booking.lineUserId) {
       const sourceAccountKey = booking.sourceAccount === "corp" ? "corp" : "general";
-      const sourceAccount = ACCOUNTS[sourceAccountKey];
+      const sourceAccount = CUSTOMER_ACCOUNTS[sourceAccountKey];
       const confirmText = [
         "ご予約ありがとうございます。",
         `メニュー: ${booking.menuName || ""}`,

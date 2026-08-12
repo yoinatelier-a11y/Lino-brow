@@ -886,8 +886,7 @@ function AdminPanel({ settings, setSettings, menus, setMenus, companies, setComp
 function LineNotifyTab() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <LineAccountRecipients storageKey="lb-line-recipients-general" title="LINO BROW（一般のお客様用）" />
-      <LineAccountRecipients storageKey="lb-line-recipients-corp" title="yoin° Beauty（法人のお客様用）" />
+      <LineAccountRecipients storageKey="lb-line-recipients-staff" title="lino brow 予約通知（スタッフ通知用・法人/一般共通）" />
     </div>
   );
 }
