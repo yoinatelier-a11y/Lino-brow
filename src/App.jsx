@@ -26,6 +26,9 @@ const pad2 = (n) => String(n).padStart(2, "0");
 const toDateStr = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 const weekdayJP = ["日", "月", "火", "水", "木", "金", "土"];
 
+const LINE_CONNECT_MESSAGE =
+  "ご予約の確定・変更のご連絡にLINEを使用します。入力いただく情報は、予約管理以外の目的では使用しません。ご安心ください。";
+
 const DEFAULT_SETTINGS = {
   salonName: "LINO BROW",
   address: "大阪市北区堂島 ○-○-○ ○○ビル2F",
@@ -349,6 +352,16 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
       const profile = await getLiffProfile();
       setLineProfile(profile);
       setLiffChecked(true);
+      if (profile) {
+        try {
+          const savedType = sessionStorage.getItem("lb-pending-type");
+          if (savedType === "corporate" || savedType === "individual") {
+            setType(savedType);
+            setStep(3);
+            sessionStorage.removeItem("lb-pending-type");
+          }
+        } catch (e) {}
+      }
     })();
   }, [sourceAccount]);
 
@@ -389,7 +402,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
     if (stillTaken) {
       setError("大変申し訳ございません。ちょうど今その枠が埋まってしまいました。別の時間をお選びください。");
       setSubmitting(false);
-      setStep(6);
+      setStep(7);
       setTime(null);
       return;
     }
@@ -398,7 +411,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
       if (q.remaining <= 0) {
         setError("大変申し訳ございません。今月のご予約枠に達しました。サロンまでご連絡ください。");
         setSubmitting(false);
-        setStep(6);
+        setStep(7);
         setTime(null);
         return;
       }
@@ -432,7 +445,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
     setBookings(updated);
     setConfirmed(newBooking);
     setSubmitting(false);
-    setStep(8);
+    setStep(9);
 
     // fire-and-forget LINE notification; booking already succeeded either way
     fetch("/api/notify-booking", {
@@ -442,7 +455,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
     }).catch(() => {});
   }
 
-  if (confirmed && step === 8) {
+  if (confirmed && step === 9) {
     return (
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "32px 20px" }}>
         <div style={{ textAlign: "center", marginBottom: 24 }}>
@@ -471,10 +484,15 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
 
   return (
     <div style={{ maxWidth: 480, margin: "0 auto", padding: "24px 20px 60px" }}>
-      <StepDots step={step} total={7} />
+      <StepDots step={step} total={8} />
 
       {step === 1 && (
         <StepBlock title="ご予約区分をお選びください">
+          {lineProfile && (
+            <div style={{ fontSize: 12.5, color: COLORS.bronzeDark, background: "#FBF6EF", border: `1px solid ${COLORS.bronze}`, borderRadius: 8, padding: 10, marginBottom: 14 }}>
+              LINE連携が完了しました。そのままお進みください。
+            </div>
+          )}
           <OptionCard selected={type === "individual"} onClick={() => setType("individual")}>
             <div style={{ fontWeight: "bold" }}>一般のお客様</div>
             <div style={{ fontSize: 12, color: "#777", marginTop: 4 }}>通常のご予約はこちら（会社の福利厚生を利用無し）</div>
@@ -488,6 +506,40 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
       )}
 
       {step === 2 && (
+        <StepBlock title="LINE連携">
+          <div style={{ fontSize: 13.5, lineHeight: 1.8, color: COLORS.charcoal, marginBottom: 18 }}>
+            {LINE_CONNECT_MESSAGE}
+          </div>
+
+          {!liffChecked && (
+            <div style={{ fontSize: 12.5, color: "#999", marginBottom: 14 }}>LINE連携を確認中…</div>
+          )}
+          {liffChecked && (
+            lineProfile ? (
+              <div style={{ fontSize: 13, color: COLORS.bronzeDark, background: "#FBF6EF", border: `1px solid ${COLORS.bronze}`, borderRadius: 8, padding: 12, marginBottom: 14 }}>
+                LINE連携済み（{lineProfile.displayName}さん）
+              </div>
+            ) : (
+              <div style={{ marginBottom: 14 }}>
+                <button
+                  style={primaryBtn}
+                  onClick={() => {
+                    try { sessionStorage.setItem("lb-pending-type", type); } catch (e) {}
+                    liffLogin();
+                  }}
+                  type="button"
+                >
+                  LINEと連携する
+                </button>
+              </div>
+            )
+          )}
+
+          <NavButtons onBack={() => setStep(1)} onNext={() => setStep(3)} nextDisabled={!lineProfile} />
+        </StepBlock>
+      )}
+
+      {step === 3 && (
         <StepBlock title={type === "corporate" ? "企業情報をご入力ください" : "お客様情報をご入力ください"}>
           {type === "corporate" ? (
             <>
@@ -540,40 +592,19 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
             </div>
           </Field>
 
-          {!liffChecked && (
-            <div style={{ fontSize: 12.5, color: "#999", marginBottom: 14 }}>LINE連携を確認中…</div>
-          )}
-          {liffChecked && (
-            lineProfile ? (
-              <div style={{ fontSize: 12.5, color: COLORS.bronzeDark, background: "#FBF6EF", border: `1px solid ${COLORS.bronze}`, borderRadius: 8, padding: 10, marginBottom: 14 }}>
-                LINE連携済み（{lineProfile.displayName}さん）。予約確定時にLINEでもお知らせします。
-              </div>
-            ) : (
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 12.5, color: "#B54747", marginBottom: 8 }}>
-                  ご予約にはLINE連携が必要です。下のボタンから連携してください。
-                </div>
-                <button style={primaryBtn} onClick={liffLogin} type="button">
-                  LINEと連携する
-                </button>
-              </div>
-            )
-          )}
-
           <NavButtons
-            onBack={() => setStep(1)}
-            onNext={() => setStep(3)}
+            onBack={() => setStep(2)}
+            onNext={() => setStep(4)}
             nextDisabled={
-              !lineProfile ||
-              (type === "corporate"
+              type === "corporate"
                 ? !matchedCompany || !customerInfo.companyConfirmed || !customerInfo.contact || !customerInfo.phone || customerInfo.firstTime === null
-                : !customerInfo.name || !customerInfo.phone || customerInfo.firstTime === null)
+                : !customerInfo.name || !customerInfo.phone || customerInfo.firstTime === null
             }
           />
         </StepBlock>
       )}
 
-      {step === 3 && (
+      {step === 4 && (
         <StepBlock title="メニューをお選びください">
           {availableMenus.map((m) => (
             <OptionCard key={m.id} selected={menuId === m.id} onClick={() => { setMenuId(m.id); setOptionIds([]); }}>
@@ -585,11 +616,11 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
               <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>所要時間: {m.duration}分</div>
             </OptionCard>
           ))}
-          <NavButtons onBack={() => setStep(2)} onNext={() => menuId && setStep(4)} nextDisabled={!menuId} />
+          <NavButtons onBack={() => setStep(3)} onNext={() => menuId && setStep(5)} nextDisabled={!menuId} />
         </StepBlock>
       )}
 
-      {step === 4 && (
+      {step === 5 && (
         <StepBlock title="オプション（任意）">
           {selectedMenu && selectedMenu.options.length > 0 ? (
             selectedMenu.options.map((o) => {
@@ -606,11 +637,11 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
           ) : (
             <div style={{ fontSize: 13, color: "#999", padding: "8px 0" }}>オプションはありません</div>
           )}
-          <NavButtons onBack={() => setStep(3)} onNext={() => setStep(5)} />
+          <NavButtons onBack={() => setStep(4)} onNext={() => setStep(6)} />
         </StepBlock>
       )}
 
-      {step === 5 && (
+      {step === 6 && (
         <StepBlock title="簡単な確認事項">
           {settings.intakeQuestions.map((q, i) => (
             <div key={i} style={{ marginBottom: 14 }}>
@@ -626,11 +657,11 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
               該当する項目がございます。当日スタッフより詳しくお伺いいたしますので、あらかじめご了承ください。
             </div>
           )}
-          <NavButtons onBack={() => setStep(4)} onNext={() => setStep(6)} />
+          <NavButtons onBack={() => setStep(5)} onNext={() => setStep(7)} />
         </StepBlock>
       )}
 
-      {step === 6 && (
+      {step === 7 && (
         <StepBlock title="ご希望の日時をお選びください">
           <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8 }}>
             {days.map((d) => (
@@ -692,11 +723,11 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
             </div>
           )}
           {error && <div style={{ color: "#B54747", fontSize: 13, marginTop: 10 }}>{error}</div>}
-          <NavButtons onBack={() => setStep(5)} onNext={() => time && setStep(7)} nextDisabled={!time || quotaBlocked} />
+          <NavButtons onBack={() => setStep(6)} onNext={() => time && setStep(8)} nextDisabled={!time || quotaBlocked} />
         </StepBlock>
       )}
 
-      {step === 7 && (
+      {step === 8 && (
         <StepBlock title="最終確認">
           <div style={card}>
             <Row label="区分" value={type === "corporate" ? "法人" : "一般"} />
@@ -717,7 +748,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
           </label>
           {error && <div style={{ color: "#B54747", fontSize: 13, marginTop: 10 }}>{error}</div>}
           <NavButtons
-            onBack={() => setStep(6)}
+            onBack={() => setStep(7)}
             onNext={handleSubmit}
             nextLabel={submitting ? "送信中…" : "予約を確定する"}
             nextDisabled={!policyAgreed || submitting}
