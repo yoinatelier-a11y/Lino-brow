@@ -36,7 +36,7 @@ const DEFAULT_SETTINGS = {
   openTime: "10:00",
   closeTime: "19:00",
   closedDates: [], // ["2026-08-15", ...]
-  blockedSlots: [], // [{id, type:'recurring'|'specific', time:"12:00", date:"2026-08-20", note:"昼休み"}]
+  blockedSlots: [], // [{id, type:'recurring'|'specific', startTime:"12:00", endTime:"13:00", date:"2026-08-20", note:"昼休み"}]
   cutoffHours: 3, // 直前予約の締切（時間前）
   confirmMessage:
     "ご予約ありがとうございます。当日はお時間の5分前にお越しください。ご不明点はお電話にてご連絡ください。",
@@ -144,7 +144,19 @@ function generateSlotsForDate(dateStr, settings, bookingsForDate, requiredMinute
   const blocked = (settings.blockedSlots || []).filter(
     (bl) => bl.type === "recurring" || (bl.type === "specific" && bl.date === dateStr)
   );
-  const blockedTimes = new Set(blocked.map((bl) => bl.time));
+  const blockedRanges = blocked.map((bl) => {
+    const startStr = bl.startTime || bl.time; // fallback for older single-time entries
+    const endStr = bl.endTime || bl.time;
+    const [sh, sm] = startStr.split(":").map(Number);
+    const [eh, em] = endStr.split(":").map(Number);
+    let startMin = sh * 60 + sm;
+    let endMin = eh * 60 + em;
+    if (endMin <= startMin) endMin = startMin + SLOT_STEP_MINUTES; // ensure at least one unit blocked
+    return { startMin, endMin };
+  });
+  function isBlocked(checkT) {
+    return blockedRanges.some((r) => checkT < r.endMin && checkT + SLOT_STEP_MINUTES > r.startMin);
+  }
 
   const requiredUnitCount = Math.max(1, Math.ceil(requiredMinutes / SLOT_STEP_MINUTES));
 
@@ -162,10 +174,7 @@ function generateSlotsForDate(dateStr, settings, bookingsForDate, requiredMinute
     for (let i = 0; i < requiredUnitCount; i++) {
       const checkT = t + i * SLOT_STEP_MINUTES;
       if (checkT + SLOT_STEP_MINUTES > closeMin) { available = false; break; } // treatment would run past closing
-      const checkH = Math.floor(checkT / 60);
-      const checkM = checkT % 60;
-      const checkTime = `${pad2(checkH)}:${pad2(checkM)}`;
-      if (occupied.has(checkT) || blockedTimes.has(checkTime)) { available = false; break; }
+      if (occupied.has(checkT) || isBlocked(checkT)) { available = false; break; }
     }
 
     if (available && isToday) {
@@ -1333,15 +1342,16 @@ function SettingsTab({ settings, setSettings }) {
   function removeClosedDate(d) {
     setLocal({ ...local, closedDates: local.closedDates.filter((x) => x !== d) });
   }
-  const [newBlock, setNewBlock] = useState({ type: "recurring", time: "12:00", date: "", note: "" });
+  const [newBlock, setNewBlock] = useState({ type: "recurring", startTime: "12:00", endTime: "13:00", date: "", note: "" });
   function addBlockedSlot() {
-    if (!newBlock.time) return;
+    if (!newBlock.startTime || !newBlock.endTime) return;
+    if (newBlock.endTime <= newBlock.startTime) return;
     if (newBlock.type === "specific" && !newBlock.date) return;
     setLocal({
       ...local,
       blockedSlots: [...(local.blockedSlots || []), { id: uid("bl_"), ...newBlock }],
     });
-    setNewBlock({ type: "recurring", time: "12:00", date: "", note: "" });
+    setNewBlock({ type: "recurring", startTime: "12:00", endTime: "13:00", date: "", note: "" });
   }
   function removeBlockedSlot(id) {
     setLocal({ ...local, blockedSlots: local.blockedSlots.filter((b) => b.id !== id) });
@@ -1398,12 +1408,16 @@ function SettingsTab({ settings, setSettings }) {
           定休日とは別に、特定の時間帯だけ予約を止められます（例: 毎日12:00の昼休み、特定日の15:00だけ他予定あり、など）。
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
-          {(local.blockedSlots || []).map((b) => (
-            <span key={b.id} style={{ background: "#F0EEEA", padding: "4px 10px", borderRadius: 14, fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
-              {b.type === "recurring" ? `毎日 ${b.time}` : `${b.date} ${b.time}`}{b.note ? `（${b.note}）` : ""}
-              <span style={{ cursor: "pointer", color: "#B54747" }} onClick={() => removeBlockedSlot(b.id)}>✕</span>
-            </span>
-          ))}
+          {(local.blockedSlots || []).map((b) => {
+            const startLabel = b.startTime || b.time;
+            const endLabel = b.endTime || b.time;
+            return (
+              <span key={b.id} style={{ background: "#F0EEEA", padding: "4px 10px", borderRadius: 14, fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
+                {b.type === "recurring" ? `毎日 ${startLabel}〜${endLabel}` : `${b.date} ${startLabel}〜${endLabel}`}{b.note ? `（${b.note}）` : ""}
+                <span style={{ cursor: "pointer", color: "#B54747" }} onClick={() => removeBlockedSlot(b.id)}>✕</span>
+              </span>
+            );
+          })}
           {(!local.blockedSlots || local.blockedSlots.length === 0) && (
             <span style={{ fontSize: 12, color: "#999" }}>設定されていません</span>
           )}
@@ -1423,8 +1437,12 @@ function SettingsTab({ settings, setSettings }) {
             </div>
           )}
           <div>
-            <div style={{ fontSize: 11, color: "#777", marginBottom: 4 }}>時間</div>
-            <input type="time" style={{ ...inputStyle, padding: "8px 8px" }} value={newBlock.time} onChange={(e) => setNewBlock({ ...newBlock, time: e.target.value })} />
+            <div style={{ fontSize: 11, color: "#777", marginBottom: 4 }}>開始時間</div>
+            <input type="time" style={{ ...inputStyle, padding: "8px 8px" }} value={newBlock.startTime} onChange={(e) => setNewBlock({ ...newBlock, startTime: e.target.value })} />
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: "#777", marginBottom: 4 }}>終了時間</div>
+            <input type="time" style={{ ...inputStyle, padding: "8px 8px" }} value={newBlock.endTime} onChange={(e) => setNewBlock({ ...newBlock, endTime: e.target.value })} />
           </div>
           <div style={{ flex: 1, minWidth: 100 }}>
             <div style={{ fontSize: 11, color: "#777", marginBottom: 4 }}>メモ（任意）</div>
