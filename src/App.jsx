@@ -114,39 +114,66 @@ async function saveBookings(v) {
 
 
 /* ---------------- slot generation ---------------- */
-function generateSlotsForDate(dateStr, settings, bookingsForDate) {
+const SLOT_STEP_MINUTES = 30; // booking start times are offered every 30 minutes
+
+function generateSlotsForDate(dateStr, settings, bookingsForDate, requiredMinutes = 60) {
   const [oh, om] = settings.openTime.split(":").map(Number);
   const [ch, cm] = settings.closeTime.split(":").map(Number);
   const openMin = oh * 60 + om;
   const closeMin = ch * 60 + cm;
-  const slots = [];
-  for (let t = openMin; t + 60 <= closeMin; t += 60) {
-    const h = Math.floor(t / 60);
-    const m = t % 60;
-    slots.push(`${pad2(h)}:${pad2(m)}`);
+
+  const slotStarts = [];
+  for (let t = openMin; t < closeMin; t += SLOT_STEP_MINUTES) {
+    slotStarts.push(t);
   }
-  const taken = new Set(
-    bookingsForDate.filter((b) => b.status !== "cancelled").map((b) => b.time)
-  );
+
+  // Mark every 30-min unit occupied by each active booking, based on that
+  // booking's own duration (so a 120-min booking blocks four consecutive units).
+  const activeBookings = bookingsForDate.filter((b) => b.status !== "cancelled");
+  const occupied = new Set();
+  activeBookings.forEach((b) => {
+    const [bh, bm] = b.time.split(":").map(Number);
+    const bStart = bh * 60 + bm;
+    const bDuration = b.durationMinutes || 60;
+    const bUnitCount = Math.max(1, Math.ceil(bDuration / SLOT_STEP_MINUTES));
+    for (let i = 0; i < bUnitCount; i++) {
+      occupied.add(bStart + i * SLOT_STEP_MINUTES);
+    }
+  });
 
   const blocked = (settings.blockedSlots || []).filter(
     (bl) => bl.type === "recurring" || (bl.type === "specific" && bl.date === dateStr)
   );
   const blockedTimes = new Set(blocked.map((bl) => bl.time));
 
+  const requiredUnitCount = Math.max(1, Math.ceil(requiredMinutes / SLOT_STEP_MINUTES));
+
   // cutoff check (only relevant for today)
   const now = new Date();
   const isToday = toDateStr(now) === dateStr;
   const cutoffMs = settings.cutoffHours * 60 * 60 * 1000;
 
-  return slots.map((time) => {
-    let available = !taken.has(time) && !blockedTimes.has(time);
+  return slotStarts.map((t) => {
+    const h = Math.floor(t / 60);
+    const m = t % 60;
+    const time = `${pad2(h)}:${pad2(m)}`;
+
+    let available = true;
+    for (let i = 0; i < requiredUnitCount; i++) {
+      const checkT = t + i * SLOT_STEP_MINUTES;
+      if (checkT + SLOT_STEP_MINUTES > closeMin) { available = false; break; } // treatment would run past closing
+      const checkH = Math.floor(checkT / 60);
+      const checkM = checkT % 60;
+      const checkTime = `${pad2(checkH)}:${pad2(checkM)}`;
+      if (occupied.has(checkT) || blockedTimes.has(checkTime)) { available = false; break; }
+    }
+
     if (available && isToday) {
-      const [sh, sm] = time.split(":").map(Number);
       const slotDate = new Date(now);
-      slotDate.setHours(sh, sm, 0, 0);
+      slotDate.setHours(h, m, 0, 0);
       if (slotDate.getTime() - now.getTime() < cutoffMs) available = false;
     }
+
     return { time, available };
   });
 }
@@ -387,7 +414,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
 
   const days = useMemo(() => nextDays(21, settings), [settings]);
   const bookingsForDate = bookings.filter((b) => b.date === dateStr);
-  const slots = dateStr ? generateSlotsForDate(dateStr, settings, bookingsForDate) : [];
+  const slots = dateStr ? generateSlotsForDate(dateStr, settings, bookingsForDate, selectedMenu?.duration || 60) : [];
 
   const policyText = type === "corporate" ? settings.cancelPolicyCorporate : settings.cancelPolicyIndividual;
 
@@ -396,10 +423,10 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
     setError("");
     // re-fetch latest bookings to avoid race condition / double booking
     const fresh = await refreshBookings();
-    const stillTaken = fresh.some(
-      (b) => b.date === dateStr && b.time === time && b.status !== "cancelled"
-    );
-    if (stillTaken) {
+    const freshBookingsForDate = fresh.filter((b) => b.date === dateStr);
+    const freshSlots = generateSlotsForDate(dateStr, settings, freshBookingsForDate, selectedMenu?.duration || 60);
+    const chosenSlot = freshSlots.find((s) => s.time === time);
+    if (!chosenSlot || !chosenSlot.available) {
       setError("大変申し訳ございません。ちょうど今その枠が埋まってしまいました。別の時間をお選びください。");
       setSubmitting(false);
       setStep(7);
@@ -429,6 +456,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
       sourceAccount,
       menuId,
       menuName: selectedMenu.name,
+      durationMinutes: selectedMenu.duration || 60,
       optionIds,
       optionNames: selectedOptions.map((o) => o.name),
       price: totalPrice,
