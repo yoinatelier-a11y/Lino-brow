@@ -380,16 +380,23 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
   const [confirmed, setConfirmed] = useState(null);
   const [lineProfile, setLineProfile] = useState(null);
   const [liffChecked, setLiffChecked] = useState(false);
+  const [liffError, setLiffError] = useState(null);
   const sourceAccount = useMemo(() => getSourceAccount(), []);
 
   useEffect(() => {
     (async () => {
-      await initLiff(sourceAccount);
+      const result = await initLiff(sourceAccount);
+      if (!result.ok) {
+        setLiffError(result.reason);
+        setLiffChecked(true);
+        return;
+      }
       const profile = await getLiffProfile();
       setLineProfile(profile);
       setLiffChecked(true);
       if (profile) {
         try {
+          sessionStorage.removeItem("lb-pending-account");
           const savedType = sessionStorage.getItem("lb-pending-type");
           if (savedType === "corporate" || savedType === "individual") {
             setType(savedType);
@@ -551,7 +558,12 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
           {!liffChecked && (
             <div style={{ fontSize: 12.5, color: "#999", marginBottom: 14 }}>LINE連携を確認中…</div>
           )}
-          {liffChecked && (
+          {liffChecked && liffError && (
+            <div style={{ fontSize: 12.5, color: "#B54747", background: "#FBEAEA", border: "1px solid #E8C9C9", borderRadius: 8, padding: 10, marginBottom: 14 }}>
+              LINE連携でエラーが発生しました: {liffError}
+            </div>
+          )}
+          {liffChecked && !liffError && (
             lineProfile ? (
               <div style={{ fontSize: 13, color: COLORS.bronzeDark, background: "#FBF6EF", border: `1px solid ${COLORS.bronze}`, borderRadius: 8, padding: 12, marginBottom: 14 }}>
                 LINE連携済み（{lineProfile.displayName}さん）
@@ -562,7 +574,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
                   style={primaryBtn}
                   onClick={() => {
                     try { sessionStorage.setItem("lb-pending-type", type); } catch (e) {}
-                    liffLogin();
+                    liffLogin(sourceAccount);
                   }}
                   type="button"
                 >

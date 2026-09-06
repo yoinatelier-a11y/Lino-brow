@@ -7,33 +7,48 @@ const LIFF_IDS = {
 };
 
 /**
- * Determines which account this page was opened for, based on a `?account=corp`
- * (or `?account=general`) query parameter. The two rich menus / LIFF endpoint
- * URLs should each include this parameter. Defaults to "general".
+ * Determines which account this page load belongs to. Prefers the `?account=`
+ * URL query param (set on the two rich-menu / LIFF endpoint URLs). LINE's
+ * login redirect strips custom query params from the return URL, so we also
+ * fall back to a value saved in sessionStorage right before starting login.
  */
 export function getSourceAccount() {
   try {
     const params = new URLSearchParams(window.location.search);
     const v = params.get("account");
-    return v === "corp" ? "corp" : "general";
-  } catch (e) {
-    return "general";
-  }
+    if (v === "corp" || v === "general") return v;
+    const saved = sessionStorage.getItem("lb-pending-account");
+    if (saved === "corp" || saved === "general") return saved;
+  } catch (e) {}
+  return "general";
+}
+
+export function rememberAccountForLogin(account) {
+  try {
+    sessionStorage.setItem("lb-pending-account", account);
+  } catch (e) {}
 }
 
 let initPromise = null;
 
+/**
+ * Returns { ok: true } on success, or { ok: false, reason } on failure —
+ * including the case where the LIFF ID env var itself is missing, so this
+ * is visible for debugging instead of silently doing nothing.
+ */
 export function initLiff(account) {
   const liffId = LIFF_IDS[account] || LIFF_IDS.general;
-  if (!liffId) return Promise.resolve(false);
+  if (!liffId) {
+    return Promise.resolve({
+      ok: false,
+      reason: `LIFF IDが未設定です（account=${account}）。VercelのVITE_LIFF_ID_${account.toUpperCase()}を確認してください。`,
+    });
+  }
   if (!initPromise) {
     initPromise = liff
       .init({ liffId })
-      .then(() => true)
-      .catch((e) => {
-        console.error("LIFF init failed", e);
-        return false;
-      });
+      .then(() => ({ ok: true }))
+      .catch((e) => ({ ok: false, reason: String((e && e.message) || e) }));
   }
   return initPromise;
 }
@@ -55,8 +70,9 @@ export async function getLiffProfile() {
   }
 }
 
-export function liffLogin() {
+export function liffLogin(account) {
   try {
+    if (account) rememberAccountForLogin(account);
     liff.login({ redirectUri: window.location.href });
   } catch (e) {}
 }
