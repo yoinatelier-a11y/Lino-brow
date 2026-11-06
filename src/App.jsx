@@ -574,7 +574,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
             <div style={{ fontSize: 12, color: "#777", marginTop: 4 }}>yoin° Beauty提携企業にお勤めの方はこちら</div>
           </OptionCard>
           <OptionCard selected={type === "trial"} onClick={() => setType("trial")}>
-            <div style={{ fontWeight: "bold" }}>yoin° Beauty 体験のお客様</div>
+            <div style={{ fontWeight: "bold" }}>yoin<span style={{ fontFamily: "Helvetica, Arial, sans-serif" }}>°</span> Beauty 体験のお客様</div>
             <div style={{ fontSize: 12, color: "#777", marginTop: 4 }}>yoin° Beautyの導入をご検討中の企業の方は、こちらからお試しいただけます</div>
           </OptionCard>
           <NavButtons onNext={() => type && setStep(2)} nextDisabled={!type} />
