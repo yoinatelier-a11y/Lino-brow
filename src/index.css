@@ -1,14 +1,19 @@
-* {
-  box-sizing: border-box;
+/* Light (staff / default) theme */
+:root{
+  --c-bg:#F8F7F4; --c-card:#fff; --c-tx:#3E3E3B; --c-mut:#777; --c-mut2:#999;
+  --c-line:#E4DFD6; --c-accent:#A78663; --c-accent-d:#8C6F52; --c-btn:#A78663; --c-on-btn:#fff;
+  --c-note:#FBF6EF; --c-dis-bg:#F0EEEA; --c-dis-tx:#B7B2A8;
+  --c-err:#B54747; --c-err-bg:#FBEAEA; --c-err-line:#E8C9C9; --c-logo:#8C6F52;
 }
-html, body, #root {
-  margin: 0;
-  padding: 0;
-  min-height: 100vh;
+/* Customer (LINO BROW) dark theme */
+body.cust{
+  --c-bg:#151514; --c-card:#262523; --c-tx:#F1EDE5; --c-mut:#B5B0A6; --c-mut2:#A39E94;
+  --c-line:#4A4842; --c-accent:#B89A78; --c-accent-d:#D0B494; --c-btn:#8A6F52; --c-on-btn:#F4EFE6;
+  --c-note:#2A2723; --c-dis-bg:transparent; --c-dis-tx:#6A665F;
+  --c-err:#E69A9A; --c-err-bg:#3A2423; --c-err-line:#6B3B3B; --c-logo:#D6D2CA;
 }
-button {
-  font-family: inherit;
-}
-input, select, textarea {
-  font-family: inherit;
-}
+html,body{margin:0;background:var(--c-bg)}
+body{color:var(--c-tx)}
+body.cust{background:radial-gradient(120% 60% at 20% 0%,#2E2D2A 0%,#1A1A18 55%,#121211 100%) fixed}
+body.cust input::placeholder,body.cust textarea::placeholder{color:#7d7870}
+body.cust input[type=checkbox]{accent-color:#8A6F52}
