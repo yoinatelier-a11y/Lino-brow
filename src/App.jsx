@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { storageGet, storageSet } from "./supabaseClient.js";
-import { initLiff, getLiffProfile, liffLogin, getSourceAccount } from "./liff.js";
+import { initLiff, getLiffProfile, liffLogin, getSourceAccount, accountForType, redirectToAccountLiff, getInitAccount, consumeAutoLogin, isLiffLoggedIn } from "./liff.js";
 
 
 /* ============================================================
@@ -365,9 +365,11 @@ function AdminGate({ settings, onSuccess, onCancel }) {
 /* ============================================================
    BOOKING FLOW (customer facing)
    ============================================================ */
+const typeLabel = (t) => (t === "corporate" ? "法人" : t === "trial" ? "体験" : "一般");
+
 function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, refreshBookings, setBookings }) {
   const [step, setStep] = useState(1);
-  const [type, setType] = useState(null); // corporate | individual
+  const [type, setType] = useState(null); // corporate | individual | trial
   const [customerInfo, setCustomerInfo] = useState({ name: "", contact: "", phone: "", firstTime: null, companyCode: "", companyConfirmed: false });
   const [menuId, setMenuId] = useState(null);
   const [optionIds, setOptionIds] = useState([]);
@@ -381,37 +383,59 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
   const [lineProfile, setLineProfile] = useState(null);
   const [liffChecked, setLiffChecked] = useState(false);
   const [liffError, setLiffError] = useState(null);
-  const sourceAccount = useMemo(() => getSourceAccount(), []);
+  const entryAccount = useMemo(() => getSourceAccount(), []);
+  // The sending account is decided by the booking type, not by the entry URL.
+  const sourceAccount = type ? accountForType(type) : entryAccount;
+  const accountMatches = getInitAccount() === sourceAccount;
 
   useEffect(() => {
     (async () => {
-      const result = await initLiff(sourceAccount);
+      const result = await initLiff(entryAccount);
       if (!result.ok) {
         setLiffError(result.reason);
         setLiffChecked(true);
         return;
       }
+      // Arrived via liff.line.me from a browser: log in automatically (once).
+      if (!isLiffLoggedIn() && consumeAutoLogin()) {
+        liffLogin(entryAccount);
+        return;
+      }
       const profile = await getLiffProfile();
       setLineProfile(profile);
       setLiffChecked(true);
-      if (profile) {
-        try {
-          sessionStorage.removeItem("lb-pending-account");
-          const savedType = sessionStorage.getItem("lb-pending-type");
-          if (savedType === "corporate" || savedType === "individual") {
+      try {
+        const savedType = sessionStorage.getItem("lb-pending-type");
+        if (savedType === "corporate" || savedType === "individual" || savedType === "trial") {
+          if (profile) {
+            sessionStorage.removeItem("lb-pending-account");
+            sessionStorage.removeItem("lb-pending-type");
             setType(savedType);
             setStep(3);
-            sessionStorage.removeItem("lb-pending-type");
           }
-        } catch (e) {}
-      }
+        }
+      } catch (e) {}
     })();
-  }, [sourceAccount]);
+  }, [entryAccount]);
 
   const matchedCompany = useMemo(() => {
     if (type !== "corporate" || !customerInfo.companyCode) return null;
     return companies.find((c) => c.code.trim().toLowerCase() === customerInfo.companyCode.trim().toLowerCase()) || null;
   }, [companies, type, customerInfo.companyCode]);
+
+  const [companyKeyword, setCompanyKeyword] = useState("");
+  const COMMON_WORDS = ["株式会社", "有限会社", "合同会社", "合資会社", "一般社団法人", "一般財団法人", "医療法人", "社会福祉法人", "（株）", "(株)", "（有）", "(有)", "会社", "株式", "有限", "合同", "法人", "グループ", "ホールディングス", "company", "co.,ltd", "inc"];
+  const stripCommon = (t) => {
+    let r = (t || "").toLowerCase().replace(/[\s　]+/g, "");
+    COMMON_WORDS.forEach((w) => { r = r.split(w.toLowerCase()).join(""); });
+    return r;
+  };
+  const companyKeywordCore = stripCommon(companyKeyword);
+  const companySearchResults = useMemo(() => {
+    const k = stripCommon(companyKeyword);
+    if (k.length < 1) return [];
+    return companies.filter((c) => stripCommon(c.name).includes(k)).slice(0, 8);
+  }, [companies, companyKeyword]);
 
   const quota = useMemo(() => {
     if (!matchedCompany || !dateStr) return null;
@@ -420,7 +444,11 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
   const quotaBlocked = type === "corporate" && quota && quota.remaining <= 0;
 
   const availableMenus = useMemo(
-    () => menus.filter((m) => m.audience === "both" || m.audience === type),
+    () => menus.filter((m) =>
+      m.audience === type ||
+      (m.audience === "both" && type !== "trial") ||
+      (m.audience === "corporate_trial" && (type === "corporate" || type === "trial"))
+    ),
     [menus, type]
   );
   const selectedMenu = menus.find((m) => m.id === menuId);
@@ -432,7 +460,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
   const bookingsForDate = bookings.filter((b) => b.date === dateStr);
   const slots = dateStr ? generateSlotsForDate(dateStr, settings, bookingsForDate, selectedMenu?.duration || 60) : [];
 
-  const policyText = type === "corporate" ? settings.cancelPolicyCorporate : settings.cancelPolicyIndividual;
+  const policyText = type === "corporate" || type === "trial" ? settings.cancelPolicyCorporate : settings.cancelPolicyIndividual;
 
   async function handleSubmit() {
     setSubmitting(true);
@@ -464,11 +492,11 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
       code: uid("").slice(0, 8).toUpperCase(),
       type,
       companyCode: type === "corporate" ? matchedCompany?.code || "" : "",
-      companyOrName: type === "corporate" ? matchedCompany?.name || customerInfo.name : customerInfo.name,
-      contactName: type === "corporate" ? customerInfo.contact : "",
+      companyOrName: type === "corporate" ? matchedCompany?.name || customerInfo.name : type === "trial" ? customerInfo.trialCompany : customerInfo.name,
+      contactName: type === "corporate" ? customerInfo.contact : type === "trial" ? customerInfo.name : "",
       phone: customerInfo.phone,
       firstTime: customerInfo.firstTime,
-      lineUserId: lineProfile?.userId || null,
+      lineUserId: lineProfile && accountMatches ? lineProfile.userId : null,
       sourceAccount,
       menuId,
       menuName: selectedMenu.name,
@@ -510,8 +538,8 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
           <Row label="予約番号" value={confirmed.code} />
           <Row label="日時" value={`${confirmed.date} ${confirmed.time}〜`} />
           <Row label="メニュー" value={confirmed.menuName + (confirmed.optionNames.length ? " / " + confirmed.optionNames.join("、") : "")} />
-          {confirmed.type !== "corporate" && <Row label="料金目安" value={`¥${confirmed.price.toLocaleString()}`} />}
-          <Row label={confirmed.type === "corporate" ? "企業名" : "お名前"} value={confirmed.companyOrName + (confirmed.companyCode ? ` (${confirmed.companyCode})` : "")} />
+          {confirmed.type === "individual" && <Row label="料金目安" value={`¥${confirmed.price.toLocaleString()}`} />}
+          <Row label={confirmed.type === "individual" ? "お名前" : "企業名"} value={confirmed.companyOrName + (confirmed.companyCode ? ` (${confirmed.companyCode})` : "")} />
         </div>
         <div style={{ ...card, marginTop: 12, fontSize: 13, lineHeight: 1.7 }}>
           <div style={{ fontWeight: "bold", marginBottom: 6 }}>{settings.salonName}</div>
@@ -545,14 +573,23 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
             <div style={{ fontWeight: "bold" }}>法人のお客様</div>
             <div style={{ fontSize: 12, color: "#777", marginTop: 4 }}>yoin° Beauty提携企業にお勤めの方はこちら</div>
           </OptionCard>
+          <OptionCard selected={type === "trial"} onClick={() => setType("trial")}>
+            <div style={{ fontWeight: "bold" }}>yoin° Beauty 体験のお客様</div>
+            <div style={{ fontSize: 12, color: "#777", marginTop: 4 }}>yoin° Beautyの導入をご検討中の企業の方は、こちらからお試しいただけます</div>
+          </OptionCard>
           <NavButtons onNext={() => type && setStep(2)} nextDisabled={!type} />
         </StepBlock>
       )}
 
       {step === 2 && (
         <StepBlock title="LINE連携">
-          <div style={{ fontSize: 13.5, lineHeight: 1.8, color: COLORS.charcoal, marginBottom: 18 }}>
-            {LINE_CONNECT_MESSAGE}
+          <div style={{ fontSize: 13.5, lineHeight: 1.8, color: COLORS.charcoal, marginBottom: 10 }}>
+            {type === "trial"
+              ? "LINEを連携いただくと、ご予約の確定やご来店前日のリマインドをお送りします。連携しなくてもご予約いただけます。"
+              : LINE_CONNECT_MESSAGE}
+          </div>
+          <div style={{ fontSize: 11.5, color: "#999", marginBottom: 18 }}>
+            ※シークレットモード（プライベートブラウジング）ではLINE連携が正常に動作しない場合があります。通常のブラウザでお試しください。
           </div>
 
           {!liffChecked && (
@@ -564,7 +601,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
             </div>
           )}
           {liffChecked && !liffError && (
-            lineProfile ? (
+            lineProfile && accountMatches ? (
               <div style={{ fontSize: 13, color: COLORS.bronzeDark, background: "#FBF6EF", border: `1px solid ${COLORS.bronze}`, borderRadius: 8, padding: 12, marginBottom: 14 }}>
                 LINE連携済み（{lineProfile.displayName}さん）
               </div>
@@ -574,7 +611,8 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
                   style={primaryBtn}
                   onClick={() => {
                     try { sessionStorage.setItem("lb-pending-type", type); } catch (e) {}
-                    liffLogin(sourceAccount);
+                    if (accountMatches) liffLogin(sourceAccount);
+                    else redirectToAccountLiff(sourceAccount);
                   }}
                   type="button"
                 >
@@ -584,13 +622,33 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
             )
           )}
 
-          <NavButtons onBack={() => setStep(1)} onNext={() => setStep(3)} nextDisabled={!lineProfile} />
+          {type === "trial" && !(lineProfile && accountMatches) && (
+            <div style={{ marginBottom: 14 }}>
+              <button style={secondaryBtn} type="button" onClick={() => setStep(3)}>連携しない</button>
+            </div>
+          )}
+
+          <NavButtons onBack={() => setStep(1)} onNext={() => setStep(3)} nextDisabled={type !== "trial" && !(lineProfile && accountMatches)} />
         </StepBlock>
       )}
 
       {step === 3 && (
-        <StepBlock title={type === "corporate" ? "企業情報をご入力ください" : "お客様情報をご入力ください"}>
-          {type === "corporate" ? (
+        <StepBlock title={type === "corporate" ? "企業情報をご入力ください" : type === "trial" ? "会社名・お名前・ご連絡先をご入力ください" : "お客様情報をご入力ください"}>
+          {type === "trial" && (
+            <div style={{ fontSize: 13, lineHeight: 1.8, color: COLORS.charcoal, marginBottom: 14 }}>
+              yoin° Beauty（社員の第一印象を整える法人向けビューティーサービス）を、実際にご体験いただけます。
+            </div>
+          )}
+          {type === "trial" ? (
+            <>
+              <Field label="会社名">
+                <input style={inputStyle} value={customerInfo.trialCompany || ""} onChange={(e) => setCustomerInfo({ ...customerInfo, trialCompany: e.target.value })} />
+              </Field>
+              <Field label="お名前">
+                <input style={inputStyle} value={customerInfo.name} onChange={(e) => setCustomerInfo({ ...customerInfo, name: e.target.value })} />
+              </Field>
+            </>
+          ) : type === "corporate" ? (
             <>
               <Field label="企業コード">
                 <input
@@ -600,6 +658,38 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
                   placeholder="例: C001"
                 />
               </Field>
+              <div style={{ marginTop: -6, marginBottom: 14 }}>
+                <div style={{ fontSize: 12, color: "#777", marginBottom: 6 }}>コードがわからない場合は、会社名のキーワードで探せます<br />※「株式会社」「会社」「株式」など、どの会社にも共通する言葉のみでは検索できません。</div>
+                <input
+                  style={inputStyle}
+                  value={companyKeyword}
+                  onChange={(e) => setCompanyKeyword(e.target.value)}
+                  placeholder="会社名の一部（例: ○○建設）"
+                />
+                {companyKeyword.trim() && companyKeywordCore.length < 1 && (
+                  <div style={{ fontSize: 12.5, color: "#B54747", marginTop: 6 }}>「株式会社」などの共通する言葉のみでは検索できません。会社名の特徴的な部分も入力してください。</div>
+                )}
+                {companyKeywordCore.length >= 1 && (
+                  <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 6 }}>
+                    {companySearchResults.length === 0 && (
+                      <div style={{ fontSize: 12.5, color: "#B54747" }}>該当する企業が見つかりませんでした。</div>
+                    )}
+                    {companySearchResults.map((c) => (
+                      <button
+                        key={c.id || c.code}
+                        type="button"
+                        style={{ ...secondaryBtn, textAlign: "left" }}
+                        onClick={() => {
+                          setCustomerInfo({ ...customerInfo, companyCode: c.code, companyConfirmed: false });
+                          setCompanyKeyword("");
+                        }}
+                      >
+                        {c.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               {customerInfo.companyCode && (
                 matchedCompany ? (
                   <div style={{ background: "#FBF6EF", border: `1px solid ${COLORS.bronze}`, borderRadius: 8, padding: 12, marginTop: -8, marginBottom: 14 }}>
@@ -631,8 +721,13 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
               <input style={inputStyle} value={customerInfo.name} onChange={(e) => setCustomerInfo({ ...customerInfo, name: e.target.value })} />
             </Field>
           )}
-          <Field label="お電話番号">
+          <Field label={type === "trial" ? "ご連絡先（お電話番号）" : "お電話番号"}>
             <input style={inputStyle} value={customerInfo.phone} onChange={(e) => setCustomerInfo({ ...customerInfo, phone: e.target.value })} />
+            {type === "trial" && (
+              <div style={{ fontSize: 11.5, color: "#777", marginTop: 6, lineHeight: 1.6 }}>
+                ※ご予約の確認のため、お電話またはメッセージをお送りする場合があります。
+              </div>
+            )}
           </Field>
           <Field label="ご来店は初めてですか？">
             <div style={{ display: "flex", gap: 8 }}>
@@ -645,7 +740,9 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
             onBack={() => setStep(2)}
             onNext={() => setStep(4)}
             nextDisabled={
-              type === "corporate"
+              type === "trial"
+                ? !customerInfo.trialCompany || !customerInfo.name || !customerInfo.phone || customerInfo.firstTime === null
+                : type === "corporate"
                 ? !matchedCompany || !customerInfo.companyConfirmed || !customerInfo.contact || !customerInfo.phone || customerInfo.firstTime === null
                 : !customerInfo.name || !customerInfo.phone || customerInfo.firstTime === null
             }
@@ -655,11 +752,14 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
 
       {step === 4 && (
         <StepBlock title="メニューをお選びください">
+          {availableMenus.length === 0 && (
+            <div style={{ fontSize: 13, color: "#999", marginBottom: 12 }}>現在ご案内できるメニューがありません。サロンまでご連絡ください。</div>
+          )}
           {availableMenus.map((m) => (
             <OptionCard key={m.id} selected={menuId === m.id} onClick={() => { setMenuId(m.id); setOptionIds([]); }}>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <div style={{ fontWeight: "bold" }}>{m.name}</div>
-                {type !== "corporate" && <div style={{ color: COLORS.bronzeDark }}>¥{m.price.toLocaleString()}</div>}
+                {type === "individual" && <div style={{ color: COLORS.bronzeDark }}>¥{m.price.toLocaleString()}</div>}
               </div>
               <div style={{ fontSize: 12, color: "#777", marginTop: 4 }}>{m.description}</div>
               <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>所要時間: {m.duration}分</div>
@@ -678,7 +778,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
                 <OptionCard key={o.id} selected={active} onClick={() => setOptionIds(active ? optionIds.filter((id) => id !== o.id) : [...optionIds, o.id])}>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <div>{o.name}</div>
-                    {type !== "corporate" && <div style={{ color: COLORS.bronzeDark }}>+¥{o.price.toLocaleString()}</div>}
+                    {type === "individual" && <div style={{ color: COLORS.bronzeDark }}>+¥{o.price.toLocaleString()}</div>}
                   </div>
                 </OptionCard>
               );
@@ -779,13 +879,14 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
       {step === 8 && (
         <StepBlock title="最終確認">
           <div style={card}>
-            <Row label="区分" value={type === "corporate" ? "法人" : "一般"} />
-            <Row label={type === "corporate" ? "企業名" : "お名前"} value={type === "corporate" ? `${matchedCompany?.name} (${matchedCompany?.code})` : customerInfo.name} />
+            <Row label="区分" value={typeLabel(type)} />
+            <Row label={type === "individual" ? "お名前" : "企業名"} value={type === "corporate" ? `${matchedCompany?.name} (${matchedCompany?.code})` : type === "trial" ? customerInfo.trialCompany : customerInfo.name} />
             {type === "corporate" && <Row label="ご担当者" value={customerInfo.contact} />}
+            {type === "trial" && <Row label="お名前" value={customerInfo.name} />}
             <Row label="メニュー" value={selectedMenu.name} />
             {selectedOptions.length > 0 && <Row label="オプション" value={selectedOptions.map((o) => o.name).join("、")} />}
             <Row label="日時" value={`${dateStr} ${time}〜`} />
-            {type !== "corporate" && <Row label="お支払い目安" value={`¥${totalPrice.toLocaleString()}`} />}
+            {(type === "individual" || type === "trial") && <Row label="お支払い目安" value={`¥${totalPrice.toLocaleString()}`} />}
           </div>
           <div style={{ ...card, marginTop: 12, fontSize: 12.5, lineHeight: 1.7, maxHeight: 160, overflowY: "auto" }}>
             <div style={{ fontWeight: "bold", marginBottom: 6 }}>キャンセルポリシー</div>
@@ -1143,7 +1244,7 @@ function BookingsTab({ bookings, setBookings, refreshBookings }) {
   function exportCSV() {
     const header = ["予約番号", "区分", "企業コード", "名前/企業名", "担当者", "電話", "メニュー", "オプション", "料金", "日付", "時間", "ステータス", "作成日時"];
     const rows = sorted.map((b) => [
-      b.code, b.type === "corporate" ? "法人" : "一般", b.companyCode || "", b.companyOrName, b.contactName, b.phone,
+      b.code, typeLabel(b.type), b.companyCode || "", b.companyOrName, b.contactName, b.phone,
       b.menuName, (b.optionNames || []).join(" / "), b.price, b.date, b.time,
       b.status === "confirmed" ? "予約中" : b.status === "done" ? "来店済み" : "キャンセル",
       b.createdAt,
@@ -1162,7 +1263,7 @@ function BookingsTab({ bookings, setBookings, refreshBookings }) {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
         <div style={{ display: "flex", gap: 6 }}>
-          {[["all", "すべて"], ["corporate", "法人"], ["individual", "一般"]].map(([k, l]) => (
+          {[["all", "すべて"], ["corporate", "法人"], ["individual", "一般"], ["trial", "体験"]].map(([k, l]) => (
             <SmallToggle key={k} active={filter === k} onClick={() => setFilter(k)}>{l}</SmallToggle>
           ))}
         </div>
@@ -1178,9 +1279,9 @@ function BookingsTab({ bookings, setBookings, refreshBookings }) {
               <div>
                 <div style={{ fontSize: 12, color: "#999" }}>{b.date} {b.time}〜 ／ #{b.code}</div>
                 <div style={{ fontWeight: "bold", marginTop: 2 }}>
-                  {b.companyOrName}{b.companyCode ? `（${b.companyCode}）` : ""} {b.type === "corporate" && b.contactName ? `／${b.contactName}` : ""}
+                  {b.companyOrName}{b.companyCode ? `（${b.companyCode}）` : ""} {b.type !== "individual" && b.contactName ? `／${b.contactName}` : ""}
                   <span style={{ fontWeight: "normal", color: "#999", marginLeft: 6, fontSize: 12 }}>
-                    {b.type === "corporate" ? "法人" : "一般"}
+                    {typeLabel(b.type)}
                   </span>
                 </div>
                 <div style={{ fontSize: 13, marginTop: 2 }}>{b.menuName}{b.optionNames?.length ? " / " + b.optionNames.join("、") : ""}</div>
@@ -1210,6 +1311,7 @@ function DashboardTab({ bookings }) {
   const active = bookings.filter((b) => b.status !== "cancelled");
   const corporate = active.filter((b) => b.type === "corporate");
   const individual = active.filter((b) => b.type === "individual");
+  const trial = active.filter((b) => b.type === "trial");
 
   const byCompany = {};
   corporate.forEach((b) => {
@@ -1228,6 +1330,7 @@ function DashboardTab({ bookings }) {
         <StatCard label="来店実績（合計）" value={active.length} />
         <StatCard label="法人 来店数" value={corporate.length} />
         <StatCard label="一般 来店数" value={individual.length} />
+        <StatCard label="体験 来店数" value={trial.length} />
         <StatCard label="累計売上目安" value={`¥${totalRevenue.toLocaleString()}`} />
       </div>
 
@@ -1311,6 +1414,8 @@ function MenusTab({ menus, setMenus }) {
                 <option value="both">法人・一般 両方</option>
                 <option value="corporate">法人のみ</option>
                 <option value="individual">一般のみ</option>
+                <option value="trial">体験のみ</option>
+                <option value="corporate_trial">法人・体験 両方</option>
               </select>
             </Field>
 
