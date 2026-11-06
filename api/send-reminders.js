@@ -72,7 +72,7 @@ export default async function handler(req, res) {
 
     let sent = 0;
     for (const b of targets) {
-      const accountKey = b.sourceAccount === "corp" ? "corp" : "general";
+      const accountKey = "general";
       const ok = await push(ACCOUNTS[accountKey]?.accessToken, b.lineUserId, reminderText(b));
       if (ok) sent++;
     }
