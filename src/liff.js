@@ -16,9 +16,6 @@ export function getSourceAccount() {
   try {
     const params = new URLSearchParams(window.location.search);
     const v = params.get("account");
-    if (v === "corp" || v === "general") return v;
-    const saved = sessionStorage.getItem("lb-pending-account");
-    if (saved === "corp" || saved === "general") return saved;
   } catch (e) {}
   return "general";
 }
@@ -29,7 +26,39 @@ export function rememberAccountForLogin(account) {
   } catch (e) {}
 }
 
+/** Booking type -> which official LINE account sends the messages. */
+export function accountForType(type) {
+  return "general"; // 全区分 LINO BROW の公式LINEに統一
+}
+
 let initPromise = null;
+let initializedAccount = null;
+
+export function getInitAccount() {
+  return initializedAccount;
+}
+
+/** True once if we were sent here from another account's LIFF and still need to log in. */
+export function consumeAutoLogin() {
+  try {
+    if (sessionStorage.getItem("lb-auto-login") === "1") {
+      sessionStorage.removeItem("lb-auto-login");
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+/** Switch to the other account's LIFF (userIds are per-provider). */
+export function redirectToAccountLiff(account) {
+  const id = LIFF_IDS[account];
+  if (!id) return;
+  try {
+    sessionStorage.setItem("lb-pending-account", account);
+    sessionStorage.setItem("lb-auto-login", "1");
+  } catch (e) {}
+  window.location.href = `https://liff.line.me/${id}`;
+}
 
 /**
  * Returns { ok: true } on success, or { ok: false, reason } on failure —
@@ -45,6 +74,7 @@ export function initLiff(account) {
     });
   }
   if (!initPromise) {
+    initializedAccount = LIFF_IDS[account] ? account : "general";
     initPromise = liff
       .init({ liffId })
       .then(() => ({ ok: true }))
