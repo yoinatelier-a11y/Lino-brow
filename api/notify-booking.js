@@ -36,7 +36,7 @@ async function getRecipients(storageKey) {
 function bookingText(booking) {
   return [
     "【新しいご予約】",
-    `区分: ${booking.type === "corporate" ? "法人" : "一般"}`,
+    `区分: ${booking.type === "corporate" ? "法人" : booking.type === "trial" ? "体験" : "一般"}`,
     `お名前/企業名: ${booking.companyOrName || ""}`,
     `メニュー: ${booking.menuName || ""}`,
     `日時: ${booking.date || ""} ${booking.time || ""}〜`,
@@ -89,10 +89,10 @@ export default async function handler(req, res) {
       bookingText(booking)
     );
 
-    // customer notification: routed by which account's LIFF the customer opened the app from
+    // customer notification: account is decided by booking type (法人・体験 = yoin° Beauty, 一般 = LINO BROW)
     let customerResult = { sent: false, reason: "no lineUserId" };
     if (booking.lineUserId) {
-      const sourceAccountKey = booking.sourceAccount === "corp" ? "corp" : "general";
+      const sourceAccountKey = "general";
       const sourceAccount = CUSTOMER_ACCOUNTS[sourceAccountKey];
       const confirmText = [
         "ご予約ありがとうございます。",
