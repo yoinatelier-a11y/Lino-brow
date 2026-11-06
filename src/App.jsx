@@ -12,11 +12,11 @@ import { initLiff, getLiffProfile, liffLogin, getSourceAccount, accountForType, 
    ============================================================ */
 
 const COLORS = {
-  ivory: "#F8F7F4",
-  bronze: "#A78663",
-  bronzeDark: "#8C6F52",
-  charcoal: "#3E3E3B",
-  line: "#E4DFD6",
+  ivory: "var(--c-bg)",
+  bronze: "var(--c-accent)",
+  bronzeDark: "var(--c-accent-d)",
+  charcoal: "var(--c-tx)",
+  line: "var(--c-line)",
 };
 
 const uid = (p = "") =>
@@ -226,6 +226,11 @@ export default function App() {
   const [bookings, setBookings] = useState([]);
   const [view, setView] = useState("booking"); // booking | adminGate | admin
 
+  // Customer-facing screens use the dark LINO BROW theme; staff screens stay light for readability.
+  useEffect(() => {
+    document.body.classList.toggle("cust", view === "booking");
+  }, [view]);
+
   useEffect(() => {
     (async () => {
       const data = await loadAll();
@@ -262,14 +267,14 @@ export default function App() {
 
   if (loading) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: COLORS.ivory, color: COLORS.charcoal, fontFamily: "Georgia, serif" }}>
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.charcoal, fontFamily: "Georgia, serif" }}>
         読み込み中…
       </div>
     );
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: COLORS.ivory, color: COLORS.charcoal, fontFamily: "'Hiragino Sans', 'Noto Sans JP', sans-serif" }}>
+    <div style={{ minHeight: "100vh", color: COLORS.charcoal, fontFamily: "'Hiragino Sans', 'Noto Sans JP', sans-serif" }}>
       <TopBar view={view} setView={setView} salonName={settings.salonName} />
       {view === "booking" && (
         <BookingFlow
@@ -305,16 +310,24 @@ export default function App() {
 }
 
 function TopBar({ view, setView, salonName }) {
+  if (view === "booking") {
+    return (
+      <div className="hdr" style={{ position: "relative", padding: "40px 20px 22px", textAlign: "center" }}>
+        <button onClick={() => setView("adminGate")} style={{ ...linkBtn, position: "absolute", top: 10, right: 12, fontSize: 10.5, opacity: 0.6, color: "var(--c-mut)" }}>スタッフ用</button>
+        <div style={{ fontSize: 20, letterSpacing: "0.42em", paddingLeft: "0.42em", color: "var(--c-logo)" }}>
+          {String(salonName || "LINO BROW").toUpperCase()}
+        </div>
+        <div style={{ fontSize: 8.5, letterSpacing: "0.42em", paddingLeft: "0.42em", color: "var(--c-mut)", marginTop: 6 }}>EYEBROW SALON</div>
+        <div style={{ height: 1, width: "60%", margin: "14px auto 0", background: "linear-gradient(90deg, transparent, var(--c-logo), transparent)", opacity: 0.45 }} />
+      </div>
+    );
+  }
   return (
     <div style={{ borderBottom: `1px solid ${COLORS.line}`, padding: "18px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
       <div style={{ fontFamily: "Georgia, serif", fontSize: 22, letterSpacing: 1, color: COLORS.bronzeDark }}>
         {salonName}
       </div>
-      {view === "booking" ? (
-        <button onClick={() => setView("adminGate")} style={linkBtn}>スタッフ用管理画面</button>
-      ) : (
-        <button onClick={() => setView("booking")} style={linkBtn}>予約画面に戻る</button>
-      )}
+      <button onClick={() => setView("booking")} style={linkBtn}>予約画面に戻る</button>
     </div>
   );
 }
@@ -561,21 +574,21 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
       {step === 1 && (
         <StepBlock title="ご予約区分をお選びください">
           {lineProfile && (
-            <div style={{ fontSize: 12.5, color: COLORS.bronzeDark, background: "#FBF6EF", border: `1px solid ${COLORS.bronze}`, borderRadius: 8, padding: 10, marginBottom: 14 }}>
+            <div style={{ fontSize: 12.5, color: COLORS.bronzeDark, background: "var(--c-note)", border: `1px solid ${COLORS.bronze}`, borderRadius: 8, padding: 10, marginBottom: 14 }}>
               LINE連携が完了しました。そのままお進みください。
             </div>
           )}
           <OptionCard selected={type === "individual"} onClick={() => setType("individual")}>
             <div style={{ fontWeight: "bold" }}>一般のお客様</div>
-            <div style={{ fontSize: 12, color: "#777", marginTop: 4 }}>通常のご予約はこちら（会社の福利厚生を利用無し）</div>
+            <div style={{ fontSize: 12, color: "var(--c-mut)", marginTop: 4 }}>LINO BROW 通常のご予約はこちら</div>
           </OptionCard>
           <OptionCard selected={type === "corporate"} onClick={() => setType("corporate")}>
             <div style={{ fontWeight: "bold" }}>法人のお客様</div>
-            <div style={{ fontSize: 12, color: "#777", marginTop: 4 }}>yoin° Beauty提携企業にお勤めの方はこちら</div>
+            <div style={{ fontSize: 12, color: "var(--c-mut)", marginTop: 4 }}>yoin° Beauty提携企業にお勤めの方はこちら</div>
           </OptionCard>
           <OptionCard selected={type === "trial"} onClick={() => setType("trial")}>
             <div style={{ fontWeight: "bold" }}>yoin<span style={{ fontFamily: "Helvetica, Arial, sans-serif" }}>°</span> Beauty 体験のお客様</div>
-            <div style={{ fontSize: 12, color: "#777", marginTop: 4 }}>yoin° Beautyの導入をご検討中の企業の方は、こちらからお試しいただけます</div>
+            <div style={{ fontSize: 12, color: "var(--c-mut)", marginTop: 4 }}>yoin° Beautyの導入をご検討中の企業の方は、こちらからお試しいただけます</div>
           </OptionCard>
           <NavButtons onNext={() => type && setStep(2)} nextDisabled={!type} />
         </StepBlock>
@@ -588,21 +601,21 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
               ? "LINEを連携いただくと、ご予約の確定やご来店前日のリマインドをお送りします。連携しなくてもご予約いただけます。"
               : LINE_CONNECT_MESSAGE}
           </div>
-          <div style={{ fontSize: 11.5, color: "#999", marginBottom: 18 }}>
+          <div style={{ fontSize: 11.5, color: "var(--c-mut2)", marginBottom: 18 }}>
             ※シークレットモード（プライベートブラウジング）ではLINE連携が正常に動作しない場合があります。通常のブラウザでお試しください。
           </div>
 
           {!liffChecked && (
-            <div style={{ fontSize: 12.5, color: "#999", marginBottom: 14 }}>LINE連携を確認中…</div>
+            <div style={{ fontSize: 12.5, color: "var(--c-mut2)", marginBottom: 14 }}>LINE連携を確認中…</div>
           )}
           {liffChecked && liffError && (
-            <div style={{ fontSize: 12.5, color: "#B54747", background: "#FBEAEA", border: "1px solid #E8C9C9", borderRadius: 8, padding: 10, marginBottom: 14 }}>
+            <div style={{ fontSize: 12.5, color: "var(--c-err)", background: "var(--c-err-bg)", border: "1px solid var(--c-err-line)", borderRadius: 8, padding: 10, marginBottom: 14 }}>
               LINE連携でエラーが発生しました: {liffError}
             </div>
           )}
           {liffChecked && !liffError && (
             lineProfile && accountMatches ? (
-              <div style={{ fontSize: 13, color: COLORS.bronzeDark, background: "#FBF6EF", border: `1px solid ${COLORS.bronze}`, borderRadius: 8, padding: 12, marginBottom: 14 }}>
+              <div style={{ fontSize: 13, color: COLORS.bronzeDark, background: "var(--c-note)", border: `1px solid ${COLORS.bronze}`, borderRadius: 8, padding: 12, marginBottom: 14 }}>
                 LINE連携済み（{lineProfile.displayName}さん）
               </div>
             ) : (
@@ -659,7 +672,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
                 />
               </Field>
               <div style={{ marginTop: -6, marginBottom: 14 }}>
-                <div style={{ fontSize: 12, color: "#777", marginBottom: 6 }}>コードがわからない場合は、会社名のキーワードで探せます<br />※「株式会社」「会社」「株式」など、どの会社にも共通する言葉のみでは検索できません。</div>
+                <div style={{ fontSize: 12, color: "var(--c-mut)", marginBottom: 6 }}>コードがわからない場合は、会社名のキーワードで探せます<br />※「株式会社」「会社」「株式」など、どの会社にも共通する言葉のみでは検索できません。</div>
                 <input
                   style={inputStyle}
                   value={companyKeyword}
@@ -667,12 +680,12 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
                   placeholder="会社名の一部（例: ○○建設）"
                 />
                 {companyKeyword.trim() && companyKeywordCore.length < 1 && (
-                  <div style={{ fontSize: 12.5, color: "#B54747", marginTop: 6 }}>「株式会社」などの共通する言葉のみでは検索できません。会社名の特徴的な部分も入力してください。</div>
+                  <div style={{ fontSize: 12.5, color: "var(--c-err)", marginTop: 6 }}>「株式会社」などの共通する言葉のみでは検索できません。会社名の特徴的な部分も入力してください。</div>
                 )}
                 {companyKeywordCore.length >= 1 && (
                   <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 6 }}>
                     {companySearchResults.length === 0 && (
-                      <div style={{ fontSize: 12.5, color: "#B54747" }}>該当する企業が見つかりませんでした。</div>
+                      <div style={{ fontSize: 12.5, color: "var(--c-err)" }}>該当する企業が見つかりませんでした。</div>
                     )}
                     {companySearchResults.map((c) => (
                       <button
@@ -692,7 +705,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
               </div>
               {customerInfo.companyCode && (
                 matchedCompany ? (
-                  <div style={{ background: "#FBF6EF", border: `1px solid ${COLORS.bronze}`, borderRadius: 8, padding: 12, marginTop: -8, marginBottom: 14 }}>
+                  <div style={{ background: "var(--c-note)", border: `1px solid ${COLORS.bronze}`, borderRadius: 8, padding: 12, marginTop: -8, marginBottom: 14 }}>
                     <div style={{ fontSize: 13, marginBottom: 8 }}>
                       企業名: <span style={{ fontWeight: "bold", color: COLORS.bronzeDark }}>{matchedCompany.name}</span>
                     </div>
@@ -707,7 +720,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
                     </label>
                   </div>
                 ) : (
-                  <div style={{ fontSize: 12.5, color: "#B54747", marginTop: -8, marginBottom: 14 }}>
+                  <div style={{ fontSize: 12.5, color: "var(--c-err)", marginTop: -8, marginBottom: 14 }}>
                     コードが確認できませんでした。サロンよりご案内のコードをご確認いただくか、直接サロンまでご連絡ください。
                   </div>
                 )
@@ -724,24 +737,26 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
           <Field label={type === "trial" ? "ご連絡先（お電話番号）" : "お電話番号"}>
             <input style={inputStyle} value={customerInfo.phone} onChange={(e) => setCustomerInfo({ ...customerInfo, phone: e.target.value })} />
             {type === "trial" && (
-              <div style={{ fontSize: 11.5, color: "#777", marginTop: 6, lineHeight: 1.6 }}>
+              <div style={{ fontSize: 11.5, color: "var(--c-mut)", marginTop: 6, lineHeight: 1.6 }}>
                 ※ご予約の確認のため、お電話またはメッセージをお送りする場合があります。
               </div>
             )}
           </Field>
+          {type !== "trial" && (
           <Field label="ご来店は初めてですか？">
             <div style={{ display: "flex", gap: 8 }}>
               <SmallToggle active={customerInfo.firstTime === true} onClick={() => setCustomerInfo({ ...customerInfo, firstTime: true })}>初めて</SmallToggle>
               <SmallToggle active={customerInfo.firstTime === false} onClick={() => setCustomerInfo({ ...customerInfo, firstTime: false })}>2回目以降</SmallToggle>
             </div>
           </Field>
+          )}
 
           <NavButtons
             onBack={() => setStep(2)}
             onNext={() => setStep(4)}
             nextDisabled={
               type === "trial"
-                ? !customerInfo.trialCompany || !customerInfo.name || !customerInfo.phone || customerInfo.firstTime === null
+                ? !customerInfo.trialCompany || !customerInfo.name || !customerInfo.phone
                 : type === "corporate"
                 ? !matchedCompany || !customerInfo.companyConfirmed || !customerInfo.contact || !customerInfo.phone || customerInfo.firstTime === null
                 : !customerInfo.name || !customerInfo.phone || customerInfo.firstTime === null
@@ -753,7 +768,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
       {step === 4 && (
         <StepBlock title="メニューをお選びください">
           {availableMenus.length === 0 && (
-            <div style={{ fontSize: 13, color: "#999", marginBottom: 12 }}>現在ご案内できるメニューがありません。サロンまでご連絡ください。</div>
+            <div style={{ fontSize: 13, color: "var(--c-mut2)", marginBottom: 12 }}>現在ご案内できるメニューがありません。サロンまでご連絡ください。</div>
           )}
           {availableMenus.map((m) => (
             <OptionCard key={m.id} selected={menuId === m.id} onClick={() => { setMenuId(m.id); setOptionIds([]); }}>
@@ -761,8 +776,8 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
                 <div style={{ fontWeight: "bold" }}>{m.name}</div>
                 {type === "individual" && <div style={{ color: COLORS.bronzeDark }}>¥{m.price.toLocaleString()}</div>}
               </div>
-              <div style={{ fontSize: 12, color: "#777", marginTop: 4 }}>{m.description}</div>
-              <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>所要時間: {m.duration}分</div>
+              <div style={{ fontSize: 12, color: "var(--c-mut)", marginTop: 4 }}>{m.description}</div>
+              <div style={{ fontSize: 11, color: "var(--c-mut2)", marginTop: 4 }}>所要時間: {m.duration}分</div>
             </OptionCard>
           ))}
           <NavButtons onBack={() => setStep(3)} onNext={() => menuId && setStep(5)} nextDisabled={!menuId} />
@@ -784,7 +799,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
               );
             })
           ) : (
-            <div style={{ fontSize: 13, color: "#999", padding: "8px 0" }}>オプションはありません</div>
+            <div style={{ fontSize: 13, color: "var(--c-mut2)", padding: "8px 0" }}>オプションはありません</div>
           )}
           <NavButtons onBack={() => setStep(4)} onNext={() => setStep(6)} />
         </StepBlock>
@@ -802,7 +817,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
             </div>
           ))}
           {Object.values(intakeAnswers).some((v) => v === true) && (
-            <div style={{ background: "#FBF3EC", border: `1px solid ${COLORS.bronze}`, borderRadius: 8, padding: 12, fontSize: 12.5, lineHeight: 1.6, marginTop: 4 }}>
+            <div style={{ background: "var(--c-note)", border: `1px solid ${COLORS.bronze}`, borderRadius: 8, padding: 12, fontSize: 12.5, lineHeight: 1.6, marginTop: 4 }}>
               該当する項目がございます。当日スタッフより詳しくお伺いいたしますので、あらかじめご了承ください。
             </div>
           )}
@@ -822,8 +837,8 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
                   padding: "10px 12px",
                   borderRadius: 8,
                   border: `1px solid ${dateStr === d.dateStr ? COLORS.bronze : COLORS.line}`,
-                  background: dateStr === d.dateStr ? COLORS.bronze : "#fff",
-                  color: dateStr === d.dateStr ? "#fff" : COLORS.charcoal,
+                  background: dateStr === d.dateStr ? "var(--c-btn)" : "var(--c-card)",
+                  color: dateStr === d.dateStr ? "var(--c-on-btn)" : COLORS.charcoal,
                   fontSize: 12,
                   cursor: "pointer",
                 }}
@@ -837,17 +852,17 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
           {dateStr && type === "corporate" && quota && (
             <div style={{
               fontSize: 12.5, marginTop: 12, padding: 10, borderRadius: 8,
-              background: quotaBlocked ? "#FBEAEA" : "#FBF6EF",
-              border: `1px solid ${quotaBlocked ? "#E8C9C9" : COLORS.bronze}`,
+              background: quotaBlocked ? "var(--c-err-bg)" : "var(--c-note)",
+              border: `1px solid ${quotaBlocked ? "var(--c-err-line)" : COLORS.bronze}`,
             }}>
               {dateStr.slice(0, 7)}月のご利用枠: {quota.used} / {quota.total} 件
-              {quotaBlocked && <div style={{ color: "#B54747", marginTop: 4 }}>今月のご予約枠に達しております。サロンまでご連絡ください。</div>}
+              {quotaBlocked && <div style={{ color: "var(--c-err)", marginTop: 4 }}>今月のご予約枠に達しております。サロンまでご連絡ください。</div>}
             </div>
           )}
 
           {dateStr && !quotaBlocked && (
             <div style={{ marginTop: 16 }}>
-              {slots.length === 0 && <div style={{ fontSize: 13, color: "#999" }}>この日は予約枠がありません</div>}
+              {slots.length === 0 && <div style={{ fontSize: 13, color: "var(--c-mut2)" }}>この日は予約枠がありません</div>}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
                 {slots.map((s) => (
                   <button
@@ -858,8 +873,8 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
                       padding: "10px 0",
                       borderRadius: 8,
                       border: `1px solid ${time === s.time ? COLORS.bronze : COLORS.line}`,
-                      background: !s.available ? "#F0EEEA" : time === s.time ? COLORS.bronze : "#fff",
-                      color: !s.available ? "#B7B2A8" : time === s.time ? "#fff" : COLORS.charcoal,
+                      background: !s.available ? "var(--c-dis-bg)" : time === s.time ? "var(--c-btn)" : "var(--c-card)",
+                      color: !s.available ? "var(--c-dis-tx)" : time === s.time ? "var(--c-on-btn)" : COLORS.charcoal,
                       fontSize: 13,
                       cursor: s.available ? "pointer" : "not-allowed",
                       textDecoration: !s.available ? "line-through" : "none",
@@ -871,7 +886,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
               </div>
             </div>
           )}
-          {error && <div style={{ color: "#B54747", fontSize: 13, marginTop: 10 }}>{error}</div>}
+          {error && <div style={{ color: "var(--c-err)", fontSize: 13, marginTop: 10 }}>{error}</div>}
           <NavButtons onBack={() => setStep(6)} onNext={() => time && setStep(8)} nextDisabled={!time || quotaBlocked} />
         </StepBlock>
       )}
@@ -896,7 +911,7 @@ function BookingFlow({ settings, menus, companies, quotaAdjustments, bookings, r
             <input type="checkbox" checked={policyAgreed} onChange={(e) => setPolicyAgreed(e.target.checked)} style={{ marginTop: 2 }} />
             <span>キャンセルポリシーに同意の上、予約を確定します</span>
           </label>
-          {error && <div style={{ color: "#B54747", fontSize: 13, marginTop: 10 }}>{error}</div>}
+          {error && <div style={{ color: "var(--c-err)", fontSize: 13, marginTop: 10 }}>{error}</div>}
           <NavButtons
             onBack={() => setStep(7)}
             onNext={handleSubmit}
@@ -922,7 +937,7 @@ function StepDots({ step, total }) {
 function StepBlock({ title, children }) {
   return (
     <div>
-      <h2 style={{ fontFamily: "Georgia, serif", fontSize: 18, marginBottom: 16 }}>{title}</h2>
+      <h2 style={{ fontWeight: 400, letterSpacing: "0.08em", fontSize: 17, lineHeight: 1.6, marginBottom: 16 }}>{title}</h2>
       {children}
     </div>
   );
@@ -933,9 +948,9 @@ function OptionCard({ selected, onClick, children }) {
       onClick={onClick}
       style={{
         border: `1.5px solid ${selected ? COLORS.bronze : COLORS.line}`,
-        background: selected ? "#FBF6EF" : "#fff",
-        borderRadius: 10,
-        padding: 14,
+        background: selected ? "var(--c-note)" : "var(--c-card)",
+        borderRadius: 6,
+        padding: "16px 16px",
         marginBottom: 10,
         cursor: "pointer",
       }}
@@ -952,8 +967,8 @@ function SmallToggle({ active, onClick, children }) {
         padding: "8px 18px",
         borderRadius: 20,
         border: `1px solid ${active ? COLORS.bronze : COLORS.line}`,
-        background: active ? COLORS.bronze : "#fff",
-        color: active ? "#fff" : COLORS.charcoal,
+        background: active ? "var(--c-btn)" : "var(--c-card)",
+        color: active ? "var(--c-on-btn)" : COLORS.charcoal,
         fontSize: 13,
         cursor: "pointer",
       }}
@@ -965,7 +980,7 @@ function SmallToggle({ active, onClick, children }) {
 function Field({ label, children }) {
   return (
     <div style={{ marginBottom: 14 }}>
-      <div style={{ fontSize: 12, color: "#777", marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 12, color: "var(--c-mut)", marginBottom: 4 }}>{label}</div>
       {children}
     </div>
   );
@@ -973,7 +988,7 @@ function Field({ label, children }) {
 function Row({ label, value }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${COLORS.line}`, fontSize: 13 }}>
-      <div style={{ color: "#777" }}>{label}</div>
+      <div style={{ color: "var(--c-mut)" }}>{label}</div>
       <div style={{ fontWeight: "bold", textAlign: "right", maxWidth: "65%" }}>{value}</div>
     </div>
   );
@@ -994,28 +1009,31 @@ const inputStyle = {
   padding: "10px 12px",
   borderRadius: 8,
   border: `1px solid ${COLORS.line}`,
+  background: "var(--c-card)",
+  color: "var(--c-tx)",
   fontSize: 14,
   boxSizing: "border-box",
 };
 const primaryBtn = {
-  background: COLORS.bronze,
-  color: "#fff",
+  background: "var(--c-btn)",
+  color: "var(--c-on-btn)",
+  letterSpacing: "0.12em",
   border: "none",
-  borderRadius: 8,
-  padding: "12px 20px",
+  borderRadius: 4,
+  padding: "14px 20px",
   fontSize: 14,
   cursor: "pointer",
 };
 const secondaryBtn = {
-  background: "#fff",
+  background: "var(--c-card)",
   color: COLORS.charcoal,
   border: `1px solid ${COLORS.line}`,
-  borderRadius: 8,
-  padding: "12px 20px",
+  borderRadius: 4,
+  padding: "14px 20px",
   fontSize: 14,
   cursor: "pointer",
 };
-const card = { border: `1px solid ${COLORS.line}`, borderRadius: 10, padding: 14, background: "#fff" };
+const card = { border: `1px solid ${COLORS.line}`, borderRadius: 6, padding: 14, background: "var(--c-card)" };
 
 /* ============================================================
    ADMIN PANEL
